@@ -139,10 +139,11 @@ function CardSimulacao({ r }: { r: Resultado }) {
       <div className="border-t border-[#262626] pt-3">
         <button
           onClick={() => setVerComissao((v) => !v)}
-          className="text-xs text-gray-400 hover:text-white flex items-center gap-1.5"
+          title={verComissao ? 'ocultar comissão' : 'ver comissão'}
+          aria-label={verComissao ? 'ocultar comissão' : 'ver comissão'}
+          className="text-gray-400 hover:text-white"
         >
           <Olho aberto={verComissao} />
-          {verComissao ? 'ocultar comissão' : 'ver comissão (interno)'}
         </button>
         {verComissao && (
           <div className="mt-2 rounded-lg border border-[#333] bg-[#0d0d0d] p-3 text-sm space-y-1">
@@ -168,7 +169,7 @@ function CardSimulacao({ r }: { r: Resultado }) {
       </div>
 
       <p className="text-[11px] text-gray-600">
-        ITBI e cartório embutidos nas parcelas. Simulação sem valor contratual — sujeita a conferência.
+        Simulação sem valor contratual — sujeita a conferência.
       </p>
     </div>
   )
