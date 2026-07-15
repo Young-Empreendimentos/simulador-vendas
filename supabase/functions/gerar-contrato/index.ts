@@ -96,7 +96,6 @@ Deno.serve(async (req: Request) => {
   const tipo = (String(raw.tipo_contrato || "aprazo")).toLowerCase(); // 'avista' | 'aprazo'
   const empreendimento_input = String(raw.empreendimento ?? "");
   const num_lote = raw.num_lote != null ? String(raw.num_lote) : String(raw.Lote ?? "");
-  const proprietario = norm(raw.proprietario || "young") === "horizonte" ? "horizonte" : "young";
 
   // Números financeiros (vêm da simulação já feita no servidor)
   const valor_lote_av = round2(raw.valor_lote_av || 0);
@@ -123,6 +122,24 @@ Deno.serve(async (req: Request) => {
     return j({ erro: "PARAMETRO_FALTANDO", mensagem: "empreendimento e num_lote (Lote) são obrigatórios para a base da comissão." }, 400);
   }
   const alvo = norm(empreendimento_input);
+
+  // Template do contrato (por empreendimento × tipo × proprietário) — do banco.
+  const { data: templates } = await admin
+    .from("comercial_templates_contratos")
+    .select("empreendimento,proprietario,id_doc_avista,id_doc_aprazo");
+  const tRows = (templates ?? []).filter((t) => norm(t.empreendimento) === alvo);
+  if (tRows.length === 0) return j({ erro: "TEMPLATE_NAO_ENCONTRADO", mensagem: `Sem template de contrato cadastrado para "${empreendimento_input}".` }, 404);
+  let tRow = tRows[0];
+  if (tRows.length > 1) {
+    const propPed = norm(raw.proprietario || "");
+    const achou = tRows.find((t) => norm(t.proprietario) === propPed);
+    if (!achou) return j({ erro: "PROPRIETARIO_AMBIGUO", mensagem: "Este empreendimento tem mais de uma vendedora. Informe o proprietário.", opcoes: tRows.map((t) => t.proprietario) });
+    tRow = achou;
+  }
+  const proprietario = norm(tRow.proprietario) === "horizonte" ? "horizonte" : "young";
+  const template_id = tipo === "avista" ? (tRow.id_doc_avista || "") : (tRow.id_doc_aprazo || "");
+  if (!template_id) return j({ erro: "TEMPLATE_TIPO_FALTANDO", mensagem: `Template ${tipo === "avista" ? "à vista" : "à prazo"} não cadastrado para "${empreendimento_input}".` }, 404);
+
   const { data: linhas } = await admin
     .from("comercial_tabela_precos").select("empreendimento,num_lote,preco_av,preco_minimo,created_at")
     .eq("num_lote", num_lote).order("created_at", { ascending: false });
@@ -263,6 +280,7 @@ Deno.serve(async (req: Request) => {
     tipo_contrato: tipo,
     tem_corretor,
     proprietario,
+    template_id,
     campos,
     requests,
     _calc: {
