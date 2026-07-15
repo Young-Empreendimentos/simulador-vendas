@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from './lib/supabase'
 import { useAuth } from './auth'
+import Contrato from './Contrato'
 
 // Nomes exatos como estão em comercial_tabela_precos (a função normaliza no servidor).
 const EMPREENDIMENTOS = [
@@ -68,7 +69,7 @@ function Olho({ aberto }: { aberto: boolean }) {
 }
 
 // Card de uma simulação (com a comissão escondida atrás do olhinho)
-function CardSimulacao({ r }: { r: Resultado }) {
+function CardSimulacao({ r, onGerarContrato }: { r: Resultado; onGerarContrato: () => void }) {
   const [verComissao, setVerComissao] = useState(false)
   return (
     <div className="bg-[#141414] border border-[#262626] rounded-xl p-6 space-y-4">
@@ -168,9 +169,15 @@ function CardSimulacao({ r }: { r: Resultado }) {
         )}
       </div>
 
-      <p className="text-[11px] text-gray-600">
-        Simulação sem valor contratual — sujeita a conferência.
-      </p>
+      <div className="flex items-center justify-between border-t border-[#262626] pt-3">
+        <p className="text-[11px] text-gray-600">Simulação sem valor contratual — sujeita a conferência.</p>
+        <button
+          onClick={onGerarContrato}
+          className="text-sm text-[#fe5009] hover:text-orange-400 font-medium whitespace-nowrap"
+        >
+          Gerar contrato →
+        </button>
+      </div>
     </div>
   )
 }
@@ -193,6 +200,7 @@ export default function Simulador() {
   const [erro, setErro] = useState<string | null>(null)
   const [resultados, setResultados] = useState<Resultado[]>([])
   const [confirmacao, setConfirmacao] = useState<{ status_lote: string; mensagem: string } | null>(null)
+  const [contratoSim, setContratoSim] = useState<Resultado | null>(null)
 
   const ehMontecarlo = empreendimento.toLowerCase() === 'montecarlo'
   const podeAutonomia = !!perfil?.pode_autonomia && ehMontecarlo
@@ -397,9 +405,13 @@ export default function Simulador() {
         )}
 
         {resultados.map((r, i) => (
-          <CardSimulacao key={resultados.length - i} r={r} />
+          <CardSimulacao key={resultados.length - i} r={r} onGerarContrato={() => setContratoSim(r)} />
         ))}
       </div>
+
+      {contratoSim && (
+        <Contrato sim={contratoSim} onClose={() => setContratoSim(null)} />
+      )}
     </div>
   )
 }
