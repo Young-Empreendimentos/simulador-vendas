@@ -9,9 +9,11 @@ const EMPREENDIMENTOS = [
   'Montecarlo', 'Morada da Coxilha', 'Parque Lorena 2', 'Parque Lorena Itaqui',
 ]
 
+// Reforços por DATA (como o bot): o financiamento começa HOJE; o "mês" do reforço
+// é a diferença em meses entre a data informada e hoje. Datas ISO (yyyy-mm-dd).
 type Regra =
-  | { id: string; tipo: 'avulso'; mes: number; valor: number }
-  | { id: string; tipo: 'recorrente'; freq: number; valor: number; inicio: number; ate: 'fim' | number }
+  | { id: string; tipo: 'avulso'; data: string; valor: number }
+  | { id: string; tipo: 'recorrente'; freq: number; valor: number; dataInicio: string; ate: 'fim' | string }
 
 // pt-BR: aceita "5.000", "5000", "5.000,50"
 const parseBRL = (s: string) => {
@@ -30,32 +32,66 @@ function limiteReforco(emp: string) {
 const rotuloFreq = (f: number) =>
   f === 3 ? 'trimestral' : f === 6 ? 'semestral' : f === 12 ? 'anual' : `a cada ${f} meses`
 
-// Expande as regras -> lista achatada {mes,valor}[], com merge por mês e clamp (mes>=1, <=teto).
-function expandir(regras: Regra[], teto: number): { mes: number; valor: number }[] {
-  const mapa = new Map<number, number>()
-  const add = (mes: number, valor: number) => {
-    if (!Number.isFinite(mes) || !Number.isFinite(valor)) return
-    if (mes < 1 || mes > teto || valor <= 0) return
-    mapa.set(mes, (mapa.get(mes) || 0) + valor)
+// ── datas ──
+const isoParaBR = (iso: string) => {
+  if (!iso) return ''
+  const [y, m, d] = iso.split('-')
+  return y && m && d ? `${d}/${m}/${y}` : iso
+}
+// nº de meses da data em relação a hoje (financiamento começa hoje)
+function mesesDeHoje(iso: string): number {
+  if (!iso) return 0
+  const [y, m] = iso.split('-').map(Number)
+  const hoje = new Date()
+  return (y - hoje.getFullYear()) * 12 + (m - 1 - hoje.getMonth())
+}
+function addMesesISO(iso: string, n: number): string {
+  if (!iso) return ''
+  const [y, m, d] = iso.split('-').map(Number)
+  const base = new Date(y, m - 1 + n, d)
+  return `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, '0')}-${String(base.getDate()).padStart(2, '0')}`
+}
+function hojeMaisMesesISO(n: number): string {
+  const d = new Date()
+  const base = new Date(d.getFullYear(), d.getMonth() + n, d.getDate())
+  return `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, '0')}-${String(base.getDate()).padStart(2, '0')}`
+}
+
+// Expande as regras -> lista {mes,valor,data_str}[], merge por mês, clamp (mes>=1, <=teto).
+function expandir(regras: Regra[], teto: number): { mes: number; valor: number; data_str: string }[] {
+  const mapa = new Map<number, { valor: number; data_str: string }>()
+  const add = (iso: string, valor: number) => {
+    const mes = mesesDeHoje(iso)
+    if (!(mes >= 1) || mes > teto || !(valor > 0)) return
+    const prev = mapa.get(mes)
+    mapa.set(mes, { valor: (prev?.valor || 0) + valor, data_str: isoParaBR(iso) })
   }
   for (const r of regras) {
-    if (r.tipo === 'avulso') add(r.mes, r.valor)
+    if (r.tipo === 'avulso') add(r.data, r.valor)
     else {
-      if (r.freq <= 0) continue
-      const inicio = Math.max(1, r.inicio)
-      const fim = r.ate === 'fim' ? teto : Math.min(r.ate, teto)
-      for (let m = inicio; m <= fim; m += r.freq) add(m, r.valor)
+      if (r.freq <= 0 || !r.dataInicio) continue
+      for (let k = 0; k < 600; k++) {
+        const iso = addMesesISO(r.dataInicio, k * r.freq)
+        if (mesesDeHoje(iso) > teto) break
+        if (r.ate !== 'fim' && iso > r.ate) break
+        add(iso, r.valor)
+      }
     }
   }
-  return [...mapa.entries()].sort((a, b) => a[0] - b[0]).map(([mes, valor]) => ({ mes, valor }))
+  return [...mapa.entries()].sort((a, b) => a[0] - b[0]).map(([mes, v]) => ({ mes, valor: v.valor, data_str: v.data_str }))
 }
-// contagem por regra (p/ rótulo do chip) sem gerar o array
 function contaRegra(r: Regra, teto: number): number {
-  if (r.tipo === 'avulso') return r.mes >= 1 && r.mes <= teto ? 1 : 0
-  const inicio = Math.max(1, r.inicio)
-  const fim = r.ate === 'fim' ? teto : Math.min(r.ate, teto)
-  if (r.freq <= 0 || inicio > fim) return 0
-  return Math.floor((fim - inicio) / r.freq) + 1
+  if (r.tipo === 'avulso') { const m = mesesDeHoje(r.data); return m >= 1 && m <= teto ? 1 : 0 }
+  if (r.freq <= 0 || !r.dataInicio) return 0
+  let c = 0
+  for (let k = 0; k < 600; k++) {
+    const iso = addMesesISO(r.dataInicio, k * r.freq)
+    const mes = mesesDeHoje(iso)
+    if (mes > teto) break
+    if (r.ate !== 'fim' && iso > r.ate) break
+    if (mes >= 1) c++
+  }
+  return c
 }
 
 type Resumo = {
@@ -242,10 +278,10 @@ export default function Simulador() {
   const [fValor, setFValor] = useState('')
   const [fFreq, setFFreq] = useState('12')
   const [fFreqN, setFFreqN] = useState('')
-  const [fInicio, setFInicio] = useState('12')
-  const [fAte, setFAte] = useState<'fim' | 'mes'>('fim')
-  const [fAteMes, setFAteMes] = useState('')
-  const [fMes, setFMes] = useState('')
+  const [fDataInicio, setFDataInicio] = useState('')
+  const [fAte, setFAte] = useState<'fim' | 'data'>('fim')
+  const [fAteData, setFAteData] = useState('')
+  const [fData, setFData] = useState('')
   const [reforcosAberto, setReforcosAberto] = useState(false)
   const valorRef = useRef<HTMLInputElement>(null)
   const [promocional, setPromocional] = useState(false)
@@ -283,18 +319,16 @@ export default function Simulador() {
     if (valor <= 0) return
     const id = crypto.randomUUID()
     if (modo === 'avulso') {
-      const mes = Number(fMes) || 0
-      if (mes < 1) return
-      setRegras((r) => [...r, { id, tipo: 'avulso', mes, valor }])
+      if (!fData || mesesDeHoje(fData) < 1) return
+      setRegras((r) => [...r, { id, tipo: 'avulso', data: fData, valor }])
     } else {
       const freq = fFreq === 'custom' ? Number(fFreqN) || 0 : Number(fFreq)
-      if (freq <= 0) return
-      const inicio = Math.max(1, Number(fInicio) || freq)
-      const ate: 'fim' | number = fAte === 'fim' ? 'fim' : Number(fAteMes) || teto
-      setRegras((r) => [...r, { id, tipo: 'recorrente', freq, valor, inicio, ate }])
+      if (freq <= 0 || !fDataInicio) return
+      const ate: 'fim' | string = fAte === 'fim' ? 'fim' : fAteData || 'fim'
+      setRegras((r) => [...r, { id, tipo: 'recorrente', freq, valor, dataInicio: fDataInicio, ate }])
     }
     setFValor('')
-    setFMes('')
+    setFData('')
   }
   function delRegra(id: string) {
     setRegras((r) => r.filter((x) => x.id !== id))
@@ -302,9 +336,10 @@ export default function Simulador() {
   function preset(kind: 'anual' | 'semestral' | 'unico') {
     if (kind === 'unico') setModo('avulso')
     else {
+      const freq = kind === 'anual' ? 12 : 6
       setModo('recorrente')
-      setFFreq(kind === 'anual' ? '12' : '6')
-      setFInicio(kind === 'anual' ? '12' : '6')
+      setFFreq(String(freq))
+      setFDataInicio(hojeMaisMesesISO(freq)) // 1ª data padrão = hoje + frequência
       setFAte('fim')
     }
     requestAnimationFrame(() => valorRef.current?.focus())
@@ -436,6 +471,7 @@ export default function Simulador() {
               {([['anual', 'Anual'], ['semestral', 'Semestral'], ['unico', 'Só um reforço']] as const).map(([k, t]) => (
                 <button key={k} type="button" onClick={() => preset(k)} className="px-3 py-1 rounded-full border border-[#333] bg-[#0d0d0d] text-xs text-gray-300 hover:border-[#fe5009] hover:text-white transition">{t}</button>
               ))}
+              <span className="text-[11px] text-gray-600">Datas futuras — o financiamento começa hoje.</span>
             </div>
 
             {prazoN > 0 ? (
@@ -446,7 +482,7 @@ export default function Simulador() {
                     <div key={a} className="absolute top-1 w-px h-4 bg-[#333]" style={{ left: `${(a / prazoN) * 100}%` }} />
                   ))}
                   {listaReforcos.map((x) => (
-                    <div key={x.mes} title={`mês ${x.mes} · ${brl(x.valor)}`} className="absolute top-3 -translate-x-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-[#fe5009] ring-2 ring-[#0d0d0d]" style={{ left: `${Math.min(x.mes / prazoN, 1) * 100}%` }} />
+                    <div key={x.mes} title={`${x.data_str} · ${brl(x.valor)}`} className="absolute top-3 -translate-x-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-[#fe5009] ring-2 ring-[#0d0d0d]" style={{ left: `${Math.min(x.mes / prazoN, 1) * 100}%` }} />
                   ))}
                 </div>
                 <div className="flex justify-between text-[10px] text-gray-600 mt-1"><span>mês 1</span><span>{prazoN} meses</span></div>
@@ -460,8 +496,8 @@ export default function Simulador() {
                 {regras.map((r) => (
                   <span key={r.id} className="inline-flex items-center gap-2 bg-[#1a1a1a] border border-[#333] rounded-full pl-3 pr-2 py-1 text-xs text-gray-200">
                     {r.tipo === 'avulso'
-                      ? `${brl(r.valor)} · mês ${r.mes}`
-                      : `${brl(r.valor)} · ${rotuloFreq(r.freq)} · do mês ${r.inicio} ${r.ate === 'fim' ? 'até o fim' : 'até o mês ' + r.ate} (${contaRegra(r, teto)}x)`}
+                      ? `${brl(r.valor)} · ${isoParaBR(r.data)}`
+                      : `${brl(r.valor)} · ${rotuloFreq(r.freq)} · a partir de ${isoParaBR(r.dataInicio)} ${r.ate === 'fim' ? 'até o fim' : 'até ' + isoParaBR(r.ate)} (${contaRegra(r, teto)}x)`}
                     <button type="button" aria-label="Remover reforço" onClick={() => delRegra(r.id)} className="text-gray-500 hover:text-red-400">✕</button>
                   </span>
                 ))}
@@ -483,9 +519,9 @@ export default function Simulador() {
                 <input ref={valorRef} className={campo} type="text" inputMode="numeric" value={fValor} onChange={(e) => setFValor(e.target.value)} placeholder="ex: 5.000" />
               </div>
               {modo === 'avulso' ? (
-                <div className="w-24">
-                  <label className={label}>No mês</label>
-                  <input className={campo} type="number" value={fMes} onChange={(e) => setFMes(e.target.value)} placeholder="12" />
+                <div className="w-40">
+                  <label className={label}>Data</label>
+                  <input className={campo} type="date" value={fData} onChange={(e) => setFData(e.target.value)} />
                 </div>
               ) : (
                 <>
@@ -504,15 +540,15 @@ export default function Simulador() {
                       <input className={campo} type="number" value={fFreqN} onChange={(e) => setFFreqN(e.target.value)} placeholder="ex: 4" />
                     </div>
                   )}
-                  <div className="w-28">
-                    <label className={label}>A partir do mês</label>
-                    <input className={campo} type="number" value={fInicio} onChange={(e) => setFInicio(e.target.value)} placeholder="12" />
+                  <div className="w-40">
+                    <label className={label}>Primeira data</label>
+                    <input className={campo} type="date" value={fDataInicio} onChange={(e) => setFDataInicio(e.target.value)} />
                   </div>
                   <div className="w-56">
                     <label className={label}>Repetir até</label>
                     <div className="grid grid-cols-2 gap-2">
                       <button type="button" onClick={() => setFAte('fim')} className={`${campo} text-left ${fAte === 'fim' ? 'border-[#fe5009] text-white' : 'text-gray-400'}`}>o fim</button>
-                      <input className={campo} type="number" value={fAteMes} onFocus={() => setFAte('mes')} onChange={(e) => { setFAte('mes'); setFAteMes(e.target.value) }} placeholder="mês…" />
+                      <input className={campo} type="date" value={fAteData} onFocus={() => setFAte('data')} onChange={(e) => { setFAte('data'); setFAteData(e.target.value) }} />
                     </div>
                   </div>
                 </>
