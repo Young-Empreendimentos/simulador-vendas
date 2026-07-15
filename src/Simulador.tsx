@@ -364,115 +364,130 @@ export default function Simulador() {
   }
 
   const campo =
-    'w-full bg-[#0d0d0d] border border-[#333] rounded-lg px-3 py-2 text-white text-sm placeholder:text-gray-600 focus:border-[#fe5009] focus:outline-none'
-  const label = 'block text-xs font-medium text-gray-400 mb-1'
+    'w-full bg-[#0d0d0d] border border-[#333] rounded-lg px-2.5 py-1.5 text-white text-sm placeholder:text-gray-600 focus:border-[#fe5009] focus:outline-none'
+  const label = 'block text-[11px] font-medium text-gray-400 mb-1'
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[380px_1fr] max-w-5xl">
-      {/* ---- Formulário ---- */}
-      <div className="bg-[#141414] border border-[#262626] rounded-xl p-4 space-y-3 h-fit lg:sticky lg:top-6">
-        <h2 className="font-display text-white text-base">Nova simulação</h2>
-
-        <div>
-          <label className={label}>Empreendimento</label>
-          <select
-            className={campo}
-            value={empreendimento}
-            onChange={(e) => setEmpreendimento(e.target.value)}
+    <div className="space-y-4 max-w-6xl mx-auto">
+      {/* ---- Barra de simulação (horizontal) ---- */}
+      <div className="bg-[#141414] border border-[#262626] rounded-xl p-4 space-y-3">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex-1 min-w-[170px]">
+            <label className={label}>Empreendimento</label>
+            <select className={campo} value={empreendimento} onChange={(e) => setEmpreendimento(e.target.value)}>
+              <option value="">Selecione…</option>
+              {EMPREENDIMENTOS.map((e) => (<option key={e} value={e}>{e}</option>))}
+            </select>
+          </div>
+          <div className="w-16">
+            <label className={label}>Lote</label>
+            <input className={campo} value={numLote} onChange={(e) => setNumLote(e.target.value)} placeholder="nº" />
+          </div>
+          <div className="w-28">
+            <label className={label}>Entrada</label>
+            <input className={campo} type="number" value={entrada} onChange={(e) => setEntrada(e.target.value)} placeholder="R$" />
+          </div>
+          <div className="w-20">
+            <label className={label}>Prazo</label>
+            <input className={campo} type="number" value={prazo} onChange={(e) => setPrazo(e.target.value)} placeholder="parc." />
+          </div>
+          <button
+            onClick={() => simular(false)}
+            disabled={carregando}
+            className="bg-[#fe5009] hover:bg-orange-600 disabled:opacity-50 transition text-white font-medium px-6 py-1.5 rounded-lg"
           >
-            <option value="">Selecione…</option>
-            {EMPREENDIMENTOS.map((e) => (
-              <option key={e} value={e}>{e}</option>
-            ))}
-          </select>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={label}>Lote (nº)</label>
-            <input className={campo} value={numLote} onChange={(e) => setNumLote(e.target.value)} placeholder="ex: 40" />
-          </div>
-          <div>
-            <label className={label}>Entrada (R$)</label>
-            <input className={campo} type="number" value={entrada} onChange={(e) => setEntrada(e.target.value)} placeholder="mín. 500" />
-          </div>
-        </div>
-
-        <div>
-          <label className={label}>Prazo (nº de parcelas)</label>
-          <input className={campo} type="number" value={prazo} onChange={(e) => setPrazo(e.target.value)} placeholder="ex: 80" />
-        </div>
-
-        {/* reforços (colapsável) */}
-        <div className="space-y-3">
-          <button type="button" onClick={() => setReforcosAberto((v) => !v)} className="w-full flex items-center justify-between">
-            <span className={label + ' mb-0'}>Reforços (opcional)</span>
-            <span className="flex items-center gap-2 text-xs text-gray-400">
-              {qtd > 0 && <span>{qtd} {qtd > 1 ? 'reforços' : 'reforço'} · {brl(totalReforcos)}</span>}
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${reforcosAberto ? 'rotate-180' : ''}`}><path d="m6 9 6 6 6-6" /></svg>
-            </span>
+            {carregando ? '…' : 'Simular'}
           </button>
-          {reforcosAberto && (<>
+        </div>
 
-          {/* presets de 1 clique */}
-          <div className="flex flex-wrap gap-2">
-            {([['anual', 'Anual'], ['semestral', 'Semestral'], ['unico', 'Só um reforço']] as const).map(([k, t]) => (
-              <button key={k} type="button" onClick={() => preset(k)} className="px-3 py-1.5 rounded-full border border-[#333] bg-[#0d0d0d] text-sm text-gray-300 hover:border-[#fe5009] hover:text-white transition">{t}</button>
-            ))}
-          </div>
-
-          {/* régua / linha do tempo */}
-          {prazoN > 0 ? (
-            <div className="rounded-lg bg-[#0d0d0d] border border-[#262626] px-3 pt-4 pb-2">
-              <div className="relative h-8">
-                <div className="absolute inset-x-0 top-3 h-[3px] bg-[#262626] rounded-full" />
-                {Array.from({ length: Math.floor(prazoN / 12) }, (_, i) => (i + 1) * 12).map((a) => (
-                  <div key={a} className="absolute top-1 w-px h-4 bg-[#333]" style={{ left: `${(a / prazoN) * 100}%` }} />
-                ))}
-                {listaReforcos.map((x) => (
-                  <div key={x.mes} title={`mês ${x.mes} · ${brl(x.valor)}`} className="absolute top-3 -translate-x-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-[#fe5009] ring-2 ring-[#0d0d0d]" style={{ left: `${Math.min(x.mes / prazoN, 1) * 100}%` }} />
-                ))}
-              </div>
-              <div className="flex justify-between text-[10px] text-gray-600 mt-1"><span>mês 1</span><span>{prazoN} meses</span></div>
-            </div>
-          ) : (
-            <p className="text-xs text-gray-600">Defina o prazo para posicionar os reforços na linha do tempo.</p>
+        {/* opções */}
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+          <label className="flex items-center gap-2 text-gray-300">
+            <input type="checkbox" checked={promocional} onChange={(e) => setPromocional(e.target.checked)} /> Promoção
+          </label>
+          {podeAutonomia && (
+            <label className="flex items-center gap-2 text-gray-300">
+              <input type="checkbox" checked={precoCustomizado} onChange={(e) => setPrecoCustomizado(e.target.checked)} /> Autonomia
+            </label>
           )}
+          {precoCustomizado && (
+            <input className={campo + ' w-40'} type="number" value={valorCustom} onChange={(e) => setValorCustom(e.target.value)} placeholder="preço à vista (R$)" />
+          )}
+          {perfil?.pode_bonificar && (
+            <label className="flex items-center gap-2 text-gray-300">
+              Bônus
+              <input className={campo + ' w-28'} type="number" value={bonus} onChange={(e) => setBonus(e.target.value)} placeholder="R$" />
+            </label>
+          )}
+          <button type="button" onClick={() => setReforcosAberto((v) => !v)} className="flex items-center gap-1.5 text-gray-300 hover:text-white ml-auto">
+            Reforços
+            {qtd > 0 && <span className="text-xs text-[#fe5009]">{qtd} · {brl(totalReforcos)}</span>}
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${reforcosAberto ? 'rotate-180' : ''}`}><path d="m6 9 6 6 6-6" /></svg>
+          </button>
+        </div>
 
-          {/* regras configuradas (chips removíveis) */}
-          {regras.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {regras.map((r) => (
-                <span key={r.id} className="inline-flex items-center gap-2 bg-[#1a1a1a] border border-[#333] rounded-full pl-3 pr-2 py-1 text-xs text-gray-200">
-                  {r.tipo === 'avulso'
-                    ? `${brl(r.valor)} · mês ${r.mes}`
-                    : `${brl(r.valor)} · ${rotuloFreq(r.freq)} · do mês ${r.inicio} ${r.ate === 'fim' ? 'até o fim' : 'até o mês ' + r.ate} (${contaRegra(r, teto)}x)`}
-                  <button type="button" aria-label="Remover reforço" onClick={() => delRegra(r.id)} className="text-gray-500 hover:text-red-400">✕</button>
-                </span>
+        {/* painel de reforços (full width quando aberto) */}
+        {reforcosAberto && (
+          <div className="border-t border-[#262626] pt-3 space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-gray-500 mr-1">Atalhos:</span>
+              {([['anual', 'Anual'], ['semestral', 'Semestral'], ['unico', 'Só um reforço']] as const).map(([k, t]) => (
+                <button key={k} type="button" onClick={() => preset(k)} className="px-3 py-1 rounded-full border border-[#333] bg-[#0d0d0d] text-xs text-gray-300 hover:border-[#fe5009] hover:text-white transition">{t}</button>
               ))}
             </div>
-          )}
 
-          {/* mini-form de adição */}
-          <div className="rounded-lg bg-[#0d0d0d] border border-[#262626] p-3 space-y-3">
-            <div className="grid grid-cols-2 gap-1 bg-[#141414] p-1 rounded-lg">
-              {(['recorrente', 'avulso'] as const).map((m) => (
-                <button key={m} type="button" onClick={() => setModo(m)} className={`text-xs py-1.5 rounded-md transition ${modo === m ? 'bg-[#fe5009] text-white' : 'text-gray-400 hover:text-white'}`}>{m === 'recorrente' ? 'Repetir' : 'Uma vez'}</button>
-              ))}
-            </div>
-            <div>
-              <label className={label}>Valor do reforço (R$)</label>
-              <input ref={valorRef} className={campo} type="text" inputMode="numeric" value={fValor} onChange={(e) => setFValor(e.target.value)} placeholder="ex: 5.000" />
-            </div>
-            {modo === 'avulso' ? (
-              <div>
-                <label className={label}>No mês</label>
-                <input className={campo} type="number" value={fMes} onChange={(e) => setFMes(e.target.value)} placeholder="ex: 12" />
+            {prazoN > 0 ? (
+              <div className="rounded-lg bg-[#0d0d0d] border border-[#262626] px-3 pt-4 pb-2">
+                <div className="relative h-8">
+                  <div className="absolute inset-x-0 top-3 h-[3px] bg-[#262626] rounded-full" />
+                  {Array.from({ length: Math.floor(prazoN / 12) }, (_, i) => (i + 1) * 12).map((a) => (
+                    <div key={a} className="absolute top-1 w-px h-4 bg-[#333]" style={{ left: `${(a / prazoN) * 100}%` }} />
+                  ))}
+                  {listaReforcos.map((x) => (
+                    <div key={x.mes} title={`mês ${x.mes} · ${brl(x.valor)}`} className="absolute top-3 -translate-x-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-[#fe5009] ring-2 ring-[#0d0d0d]" style={{ left: `${Math.min(x.mes / prazoN, 1) * 100}%` }} />
+                  ))}
+                </div>
+                <div className="flex justify-between text-[10px] text-gray-600 mt-1"><span>mês 1</span><span>{prazoN} meses</span></div>
               </div>
             ) : (
-              <>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
+              <p className="text-xs text-gray-600">Defina o prazo para posicionar os reforços na linha do tempo.</p>
+            )}
+
+            {regras.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {regras.map((r) => (
+                  <span key={r.id} className="inline-flex items-center gap-2 bg-[#1a1a1a] border border-[#333] rounded-full pl-3 pr-2 py-1 text-xs text-gray-200">
+                    {r.tipo === 'avulso'
+                      ? `${brl(r.valor)} · mês ${r.mes}`
+                      : `${brl(r.valor)} · ${rotuloFreq(r.freq)} · do mês ${r.inicio} ${r.ate === 'fim' ? 'até o fim' : 'até o mês ' + r.ate} (${contaRegra(r, teto)}x)`}
+                    <button type="button" aria-label="Remover reforço" onClick={() => delRegra(r.id)} className="text-gray-500 hover:text-red-400">✕</button>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* mini-form horizontal */}
+            <div className="flex flex-wrap items-end gap-3 rounded-lg bg-[#0d0d0d] border border-[#262626] p-3">
+              <div className="w-40">
+                <label className={label}>Tipo</label>
+                <div className="grid grid-cols-2 gap-1 bg-[#141414] p-1 rounded-lg">
+                  {(['recorrente', 'avulso'] as const).map((m) => (
+                    <button key={m} type="button" onClick={() => setModo(m)} className={`text-xs py-1 rounded-md transition ${modo === m ? 'bg-[#fe5009] text-white' : 'text-gray-400 hover:text-white'}`}>{m === 'recorrente' ? 'Repetir' : 'Uma vez'}</button>
+                  ))}
+                </div>
+              </div>
+              <div className="w-32">
+                <label className={label}>Valor (R$)</label>
+                <input ref={valorRef} className={campo} type="text" inputMode="numeric" value={fValor} onChange={(e) => setFValor(e.target.value)} placeholder="ex: 5.000" />
+              </div>
+              {modo === 'avulso' ? (
+                <div className="w-24">
+                  <label className={label}>No mês</label>
+                  <input className={campo} type="number" value={fMes} onChange={(e) => setFMes(e.target.value)} placeholder="12" />
+                </div>
+              ) : (
+                <>
+                  <div className="w-36">
                     <label className={label}>Frequência</label>
                     <select className={campo} value={fFreq} onChange={(e) => setFFreq(e.target.value)}>
                       <option value="12">Anual</option>
@@ -481,105 +496,59 @@ export default function Simulador() {
                       <option value="custom">A cada N meses…</option>
                     </select>
                   </div>
-                  <div>
+                  {fFreq === 'custom' && (
+                    <div className="w-28">
+                      <label className={label}>A cada (meses)</label>
+                      <input className={campo} type="number" value={fFreqN} onChange={(e) => setFFreqN(e.target.value)} placeholder="ex: 4" />
+                    </div>
+                  )}
+                  <div className="w-28">
                     <label className={label}>A partir do mês</label>
                     <input className={campo} type="number" value={fInicio} onChange={(e) => setFInicio(e.target.value)} placeholder="12" />
                   </div>
-                </div>
-                {fFreq === 'custom' && (
-                  <div>
-                    <label className={label}>A cada quantos meses</label>
-                    <input className={campo} type="number" value={fFreqN} onChange={(e) => setFFreqN(e.target.value)} placeholder="ex: 4" />
+                  <div className="w-56">
+                    <label className={label}>Repetir até</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button type="button" onClick={() => setFAte('fim')} className={`${campo} text-left ${fAte === 'fim' ? 'border-[#fe5009] text-white' : 'text-gray-400'}`}>o fim</button>
+                      <input className={campo} type="number" value={fAteMes} onFocus={() => setFAte('mes')} onChange={(e) => { setFAte('mes'); setFAteMes(e.target.value) }} placeholder="mês…" />
+                    </div>
                   </div>
-                )}
-                <div>
-                  <label className={label}>Repetir até</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button type="button" onClick={() => setFAte('fim')} className={`${campo} text-left ${fAte === 'fim' ? 'border-[#fe5009] text-white' : 'text-gray-400'}`}>o fim do contrato</button>
-                    <input className={campo} type="number" value={fAteMes} onFocus={() => setFAte('mes')} onChange={(e) => { setFAte('mes'); setFAteMes(e.target.value) }} placeholder="até o mês…" />
-                  </div>
-                </div>
-              </>
-            )}
-            <button type="button" onClick={addRegra} disabled={modo === 'recorrente' && fAte === 'fim' && !prazoN} className="w-full bg-[#fe5009] hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg py-2 transition">+ Adicionar reforço</button>
-            {modo === 'recorrente' && fAte === 'fim' && !prazoN && (
-              <p className="text-xs text-gray-600">Defina o prazo para usar "até o fim do contrato".</p>
-            )}
-          </div>
-          </>)}
-        </div>
-
-        <label className="flex items-center gap-2 text-sm text-gray-300">
-          <input type="checkbox" checked={promocional} onChange={(e) => setPromocional(e.target.checked)} />
-          Aplicar promoção vigente
-        </label>
-
-        {podeAutonomia && (
-          <div className="rounded-lg border border-[#004ebf]/40 bg-[#004ebf]/10 p-3 space-y-2">
-            <label className="flex items-center gap-2 text-sm text-gray-200">
-              <input type="checkbox" checked={precoCustomizado} onChange={(e) => setPrecoCustomizado(e.target.checked)} />
-              Preço com autonomia (Montecarlo)
-            </label>
-            {precoCustomizado && (
-              <input className={campo} type="number" value={valorCustom} onChange={(e) => setValorCustom(e.target.value)} placeholder="preço à vista (R$)" />
-            )}
+                </>
+              )}
+              <button type="button" onClick={addRegra} disabled={modo === 'recorrente' && fAte === 'fim' && !prazoN} className="bg-[#fe5009] hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg px-4 py-1.5 transition">+ Adicionar</button>
+            </div>
           </div>
         )}
-
-        {perfil?.pode_bonificar && (
-          <div>
-            <label className={label}>Bônus na comissão (R$)</label>
-            <input className={campo} type="number" value={bonus} onChange={(e) => setBonus(e.target.value)} placeholder="opcional" />
-            <p className="text-[10px] text-gray-600 mt-1">Some à comissão · teto: comissão + bônus ≤ entrada.</p>
-          </div>
-        )}
-
-        <button
-          onClick={() => simular(false)}
-          disabled={carregando}
-          className="w-full bg-[#fe5009] hover:bg-orange-600 disabled:opacity-50 transition text-white font-medium py-2.5 rounded-lg"
-        >
-          {carregando ? 'Calculando…' : 'Simular'}
-        </button>
 
         {erro && (
           <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{erro}</p>
         )}
       </div>
 
-      {/* ---- Resultados (empilham, mais recente no topo) ---- */}
-      <div className="space-y-4">
-        {confirmacao && (
-          <div className="bg-[#141414] border border-yellow-500/40 rounded-xl p-6 space-y-4">
-            <div className="flex items-center gap-2">
-              <span className="text-yellow-400 text-xl">⚠️</span>
-              <h2 className="font-display text-white text-base">Lote não está disponível</h2>
-            </div>
-            <p className="text-sm text-gray-300">{confirmacao.mensagem}</p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => simular(true)}
-                disabled={carregando}
-                className="flex-1 bg-[#fe5009] hover:bg-orange-600 disabled:opacity-50 transition text-white font-medium py-2 rounded-lg"
-              >
-                {carregando ? 'Calculando…' : 'Simular mesmo assim'}
-              </button>
-              <button
-                onClick={() => setConfirmacao(null)}
-                className="flex-1 border border-[#333] text-gray-300 hover:text-white py-2 rounded-lg"
-              >
-                Cancelar
-              </button>
-            </div>
+      {/* ---- Confirmação ---- */}
+      {confirmacao && (
+        <div className="bg-[#141414] border border-yellow-500/40 rounded-xl p-5 space-y-4 max-w-xl">
+          <div className="flex items-center gap-2">
+            <span className="text-yellow-400 text-xl">⚠️</span>
+            <span className="font-display text-white text-base">Lote não está disponível</span>
           </div>
-        )}
-
-        {resultados.length === 0 && !confirmacao && (
-          <div className="bg-[#141414] border border-dashed border-[#2a2a2a] rounded-xl p-8 text-center text-gray-500 text-sm min-h-[200px] flex items-center justify-center">
-            Preencha os dados e clique em <span className="text-gray-300 mx-1">Simular</span> para ver a proposta.
+          <p className="text-sm text-gray-300">{confirmacao.mensagem}</p>
+          <div className="flex gap-3">
+            <button onClick={() => simular(true)} disabled={carregando} className="flex-1 bg-[#fe5009] hover:bg-orange-600 disabled:opacity-50 transition text-white font-medium py-2 rounded-lg">
+              {carregando ? 'Calculando…' : 'Simular mesmo assim'}
+            </button>
+            <button onClick={() => setConfirmacao(null)} className="flex-1 border border-[#333] text-gray-300 hover:text-white py-2 rounded-lg">Cancelar</button>
           </div>
-        )}
+        </div>
+      )}
 
+      {/* ---- Resultados (grade) ---- */}
+      {resultados.length === 0 && !confirmacao && (
+        <div className="bg-[#141414] border border-dashed border-[#2a2a2a] rounded-xl p-8 text-center text-gray-500 text-sm">
+          Preencha os dados e clique em <span className="text-gray-300 mx-1">Simular</span> para ver a proposta.
+        </div>
+      )}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 items-start">
         {resultados.map((r, i) => (
           <CardSimulacao key={resultados.length - i} r={r} onGerarContrato={() => setContratoSim(r)} />
         ))}

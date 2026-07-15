@@ -60,15 +60,15 @@ function AppShell() {
   const { perfil, signOut } = useAuth()
   return (
     <div className="min-h-full">
-      <header className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-[#061b39] to-[#0d0d0d] border-b border-[#232323]">
-        <span className="font-display font-bold text-lg text-white">Simulador de Vendas</span>
+      <header className="flex items-center justify-between px-6 py-2.5 bg-gradient-to-r from-[#061b39] to-[#0d0d0d] border-b border-[#232323]">
+        <span className="font-display font-bold text-sm text-[#fe5009] tracking-wide">Young</span>
         <div className="flex items-center gap-3 text-sm">
           <span className="text-gray-300">{perfil?.nome ?? perfil?.email}</span>
           <span className="text-[10px] uppercase tracking-wider text-gray-400 border border-[#333] rounded px-1.5 py-0.5">{perfil?.papel}</span>
           <button onClick={signOut} className="text-gray-400 hover:text-white">Sair</button>
         </div>
       </header>
-      <main className="p-6">
+      <main className="p-4">
         <Simulador />
       </main>
     </div>
