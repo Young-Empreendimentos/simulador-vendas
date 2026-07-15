@@ -372,7 +372,7 @@ export default function Simulador() {
       {/* ---- Barra de simulação (horizontal) ---- */}
       <div className="bg-[#141414] border border-[#262626] rounded-xl p-4 space-y-3">
         <div className="flex flex-wrap items-end gap-3">
-          <div className="flex-1 min-w-[170px]">
+          <div className="w-52">
             <label className={label}>Empreendimento</label>
             <select className={campo} value={empreendimento} onChange={(e) => setEmpreendimento(e.target.value)}>
               <option value="">Selecione…</option>
@@ -394,7 +394,7 @@ export default function Simulador() {
           <button
             onClick={() => simular(false)}
             disabled={carregando}
-            className="bg-[#fe5009] hover:bg-orange-600 disabled:opacity-50 transition text-white font-medium px-6 py-1.5 rounded-lg"
+            className="ml-auto bg-[#fe5009] hover:bg-orange-600 disabled:opacity-50 transition text-white font-medium px-6 py-1.5 rounded-lg"
           >
             {carregando ? '…' : 'Simular'}
           </button>
