@@ -54,9 +54,7 @@ export default function Simulador() {
   const [empreendimento, setEmpreendimento] = useState(inicial.empreendimento)
   const [numLote, setNumLote] = useState(inicial.lote)
   const [entrada, setEntrada] = useState('')
-  const [modo, setModo] = useState<'prazo' | 'parcela'>('prazo')
   const [prazo, setPrazo] = useState('')
-  const [parcela, setParcela] = useState('')
   const [reforcos, setReforcos] = useState<Reforco[]>([])
   const [promocional, setPromocional] = useState(false)
   const [precoCustomizado, setPrecoCustomizado] = useState(false)
@@ -101,8 +99,7 @@ export default function Simulador() {
       preco_customizado: precoCustomizado,
     }
     if (precoCustomizado) body.valor_lote = Number(valorCustom) || 0
-    if (modo === 'prazo') body.prazo_meses = Number(prazo) || 0
-    else body.parcela_desejada = Number(parcela) || 0
+    body.prazo_meses = Number(prazo) || 0
     body.reforcos = reforcos
       .filter((r) => r.mes && r.valor)
       .map((r) => ({ mes: Number(r.mes), valor: Number(r.valor) }))
@@ -170,25 +167,9 @@ export default function Simulador() {
           </div>
         </div>
 
-        {/* modo prazo x parcela */}
         <div>
-          <div className="flex rounded-lg border border-[#333] overflow-hidden text-sm mb-2">
-            <button
-              type="button"
-              onClick={() => setModo('prazo')}
-              className={`flex-1 py-1.5 ${modo === 'prazo' ? 'bg-[#fe5009] text-white' : 'text-gray-400'}`}
-            >Por prazo</button>
-            <button
-              type="button"
-              onClick={() => setModo('parcela')}
-              className={`flex-1 py-1.5 ${modo === 'parcela' ? 'bg-[#fe5009] text-white' : 'text-gray-400'}`}
-            >Por parcela</button>
-          </div>
-          {modo === 'prazo' ? (
-            <input className={campo} type="number" value={prazo} onChange={(e) => setPrazo(e.target.value)} placeholder="nº de parcelas (ex: 80)" />
-          ) : (
-            <input className={campo} type="number" value={parcela} onChange={(e) => setParcela(e.target.value)} placeholder="parcela desejada (R$)" />
-          )}
+          <label className={label}>Prazo (nº de parcelas)</label>
+          <input className={campo} type="number" value={prazo} onChange={(e) => setPrazo(e.target.value)} placeholder="ex: 80" />
         </div>
 
         {/* reforços */}
