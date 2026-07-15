@@ -1,5 +1,6 @@
 import { type ReactNode } from 'react'
 import { useAuth } from './auth'
+import Simulador from './Simulador'
 
 function Centro({ children }: { children: ReactNode }) {
   return (
@@ -68,17 +69,7 @@ function AppShell() {
         </div>
       </header>
       <main className="p-6">
-        <div className="bg-[#141414] border border-[#262626] rounded-xl p-6 max-w-lg">
-          <h2 className="font-display text-white text-base mb-2">Estrutura no ar ✓</h2>
-          <p className="text-gray-400 text-sm">
-            Login e controle de acesso funcionando. Próximas etapas: simulação de
-            financiamento, comissão/autonomia/bônus, geração de contrato e e-mails.
-          </p>
-          <p className="text-gray-500 text-xs mt-4">
-            Suas permissões — autonomia: {perfil?.pode_autonomia ? 'sim' : 'não'} · bônus:{' '}
-            {perfil?.pode_bonificar ? 'sim' : 'não'}
-          </p>
-        </div>
+        <Simulador />
       </main>
     </div>
   )
