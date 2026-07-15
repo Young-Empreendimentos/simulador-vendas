@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+:root {
+  --brand-orange: #fe5009;
+  --brand-navy: #061b39;
+}
+
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: #0d0d0d;
+  color: #f2f2f2;
+  font-family: 'Be Vietnam Pro', system-ui, -apple-system, sans-serif;
+}
+h1, h2, h3, .font-display { font-family: 'Space Grotesk', system-ui, sans-serif; }
