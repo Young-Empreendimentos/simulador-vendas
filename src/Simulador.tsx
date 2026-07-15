@@ -114,11 +114,11 @@ function CardSimulacao({ r }: { r: Resultado }) {
 
       <div className="rounded-lg border border-[#262626] divide-y divide-[#262626] text-sm">
         <div className="flex items-center justify-between px-3 py-2.5">
-          <span className="text-gray-400">📋 Custos de registro (ITBI + Cartório)</span>
+          <span className="text-gray-400">Custos de registro (ITBI + Cartório)</span>
           <span className="text-white">{brl(r.resumo.itbi + r.resumo.cartorio)}</span>
         </div>
         <div className="flex items-center justify-between px-3 py-2.5 bg-[#0d0d0d]">
-          <span className="text-gray-200">💳 Valor total do financiamento</span>
+          <span className="text-gray-200">Valor total do financiamento</span>
           <span className="text-white font-display text-base">{brl(r.resumo.total_pago)}</span>
         </div>
       </div>
