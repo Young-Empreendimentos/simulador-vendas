@@ -102,16 +102,25 @@ function CardSimulacao({ r }: { r: Resultado }) {
           ['Valor à vista', brl(r.resumo.valor_lote_av)],
           ['Entrada', brl(r.resumo.entrada)],
           ['Parcelas', `${r.resumo.prazo_meses}x de ${brl(r.resumo.parcela_mensal)}`],
-          ['Total das parcelas', brl(r.resumo.total_parcelas)],
-          ['Reforços', brl(r.resumo.total_reforcos)],
-          [`ITBI (${r.resumo.itbi_percentual}%)`, brl(r.resumo.itbi)],
-          ['Cartório', brl(r.resumo.cartorio)],
+          ['Total em parcelas', brl(r.resumo.total_parcelas)],
+          ...(r.resumo.total_reforcos > 0 ? [['Reforços', brl(r.resumo.total_reforcos)]] : []),
         ].map(([k, v]) => (
           <div key={k} className="bg-[#141414] p-3">
             <p className="text-gray-500 text-xs">{k}</p>
             <p className="text-white">{v}</p>
           </div>
         ))}
+      </div>
+
+      <div className="rounded-lg border border-[#262626] divide-y divide-[#262626] text-sm">
+        <div className="flex items-center justify-between px-3 py-2.5">
+          <span className="text-gray-400">📋 Custos de registro (ITBI + Cartório)</span>
+          <span className="text-white">{brl(r.resumo.itbi + r.resumo.cartorio)}</span>
+        </div>
+        <div className="flex items-center justify-between px-3 py-2.5 bg-[#0d0d0d]">
+          <span className="text-gray-200">💳 Valor total do financiamento</span>
+          <span className="text-white font-display text-base">{brl(r.resumo.total_pago)}</span>
+        </div>
       </div>
 
       {r.reforcos.length > 0 && (
