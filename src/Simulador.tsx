@@ -253,8 +253,6 @@ export default function Simulador() {
                 ['Reforços', brl(resultado.resumo.total_reforcos)],
                 [`ITBI (${resultado.resumo.itbi_percentual}%)`, brl(resultado.resumo.itbi)],
                 ['Cartório', brl(resultado.resumo.cartorio)],
-                ['Total a prazo', brl(resultado.resumo.total_pago)],
-                ['Multiplicador', `${resultado.resumo.multiplicador}x`],
               ].map(([k, v]) => (
                 <div key={k} className="bg-[#141414] p-3">
                   <p className="text-gray-500 text-xs">{k}</p>
