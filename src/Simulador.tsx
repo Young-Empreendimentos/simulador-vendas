@@ -246,6 +246,7 @@ export default function Simulador() {
   const [fAte, setFAte] = useState<'fim' | 'mes'>('fim')
   const [fAteMes, setFAteMes] = useState('')
   const [fMes, setFMes] = useState('')
+  const [reforcosAberto, setReforcosAberto] = useState(false)
   const valorRef = useRef<HTMLInputElement>(null)
   const [promocional, setPromocional] = useState(false)
   const [precoCustomizado, setPrecoCustomizado] = useState(false)
@@ -369,7 +370,7 @@ export default function Simulador() {
   return (
     <div className="grid gap-6 lg:grid-cols-[380px_1fr] max-w-5xl">
       {/* ---- Formulário ---- */}
-      <div className="bg-[#141414] border border-[#262626] rounded-xl p-5 space-y-4 h-fit lg:sticky lg:top-6">
+      <div className="bg-[#141414] border border-[#262626] rounded-xl p-4 space-y-3 h-fit lg:sticky lg:top-6">
         <h2 className="font-display text-white text-base">Nova simulação</h2>
 
         <div>
@@ -402,15 +403,16 @@ export default function Simulador() {
           <input className={campo} type="number" value={prazo} onChange={(e) => setPrazo(e.target.value)} placeholder="ex: 80" />
         </div>
 
-        {/* reforços */}
+        {/* reforços (colapsável) */}
         <div className="space-y-3">
-          <div className="flex items-center justify-between">
+          <button type="button" onClick={() => setReforcosAberto((v) => !v)} className="w-full flex items-center justify-between">
             <span className={label + ' mb-0'}>Reforços (opcional)</span>
-            {qtd > 0 && (
-              <span className="text-xs text-gray-400">{qtd} {qtd > 1 ? 'reforços' : 'reforço'} · {brl(totalReforcos)}</span>
-            )}
-          </div>
-          <p className="text-xs text-gray-600 -mt-1">Pagamentos extras além das parcelas mensais.</p>
+            <span className="flex items-center gap-2 text-xs text-gray-400">
+              {qtd > 0 && <span>{qtd} {qtd > 1 ? 'reforços' : 'reforço'} · {brl(totalReforcos)}</span>}
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${reforcosAberto ? 'rotate-180' : ''}`}><path d="m6 9 6 6 6-6" /></svg>
+            </span>
+          </button>
+          {reforcosAberto && (<>
 
           {/* presets de 1 clique */}
           <div className="flex flex-wrap gap-2">
@@ -504,6 +506,7 @@ export default function Simulador() {
               <p className="text-xs text-gray-600">Defina o prazo para usar "até o fim do contrato".</p>
             )}
           </div>
+          </>)}
         </div>
 
         <label className="flex items-center gap-2 text-sm text-gray-300">
