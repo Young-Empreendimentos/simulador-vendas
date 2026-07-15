@@ -371,7 +371,7 @@ export default function Simulador() {
     <div className="space-y-4 max-w-6xl mx-auto">
       {/* ---- Barra de simulação (horizontal) ---- */}
       <div className="bg-[#141414] border border-[#262626] rounded-xl p-4 space-y-3">
-        <div className="flex flex-wrap items-end gap-3">
+        <div className="flex flex-wrap items-end gap-x-3 gap-y-3">
           <div className="w-52">
             <label className={label}>Empreendimento</label>
             <select className={campo} value={empreendimento} onChange={(e) => setEmpreendimento(e.target.value)}>
@@ -391,38 +391,40 @@ export default function Simulador() {
             <label className={label}>Prazo</label>
             <input className={campo} type="number" value={prazo} onChange={(e) => setPrazo(e.target.value)} placeholder="parc." />
           </div>
+
+          <div className="w-px self-stretch bg-[#262626] mx-1" />
+
+          {/* opções na mesma linha (alinhadas à base dos campos) */}
+          <div className="flex items-center flex-wrap gap-x-4 gap-y-1 h-[34px] text-sm">
+            <label className="flex items-center gap-2 text-gray-300 whitespace-nowrap">
+              <input type="checkbox" checked={promocional} onChange={(e) => setPromocional(e.target.checked)} /> Promoção
+            </label>
+            {podeAutonomia && (
+              <label className="flex items-center gap-2 text-gray-300 whitespace-nowrap">
+                <input type="checkbox" checked={precoCustomizado} onChange={(e) => setPrecoCustomizado(e.target.checked)} /> Autonomia
+              </label>
+            )}
+            {precoCustomizado && (
+              <input className={campo + ' w-36'} type="number" value={valorCustom} onChange={(e) => setValorCustom(e.target.value)} placeholder="preço à vista R$" />
+            )}
+            {perfil?.pode_bonificar && (
+              <label className="flex items-center gap-2 text-gray-300 whitespace-nowrap">
+                Bônus <input className={campo + ' w-24'} type="number" value={bonus} onChange={(e) => setBonus(e.target.value)} placeholder="R$" />
+              </label>
+            )}
+            <button type="button" onClick={() => setReforcosAberto((v) => !v)} className="flex items-center gap-1.5 text-gray-300 hover:text-white whitespace-nowrap">
+              Reforços
+              {qtd > 0 && <span className="text-xs text-[#fe5009]">{qtd} · {brl(totalReforcos)}</span>}
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${reforcosAberto ? 'rotate-180' : ''}`}><path d="m6 9 6 6 6-6" /></svg>
+            </button>
+          </div>
+
           <button
             onClick={() => simular(false)}
             disabled={carregando}
-            className="ml-auto bg-[#fe5009] hover:bg-orange-600 disabled:opacity-50 transition text-white font-medium px-6 py-1.5 rounded-lg"
+            className="ml-auto self-end bg-[#fe5009] hover:bg-orange-600 disabled:opacity-50 transition text-white font-medium px-6 py-1.5 rounded-lg"
           >
             {carregando ? '…' : 'Simular'}
-          </button>
-        </div>
-
-        {/* opções */}
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
-          <label className="flex items-center gap-2 text-gray-300">
-            <input type="checkbox" checked={promocional} onChange={(e) => setPromocional(e.target.checked)} /> Promoção
-          </label>
-          {podeAutonomia && (
-            <label className="flex items-center gap-2 text-gray-300">
-              <input type="checkbox" checked={precoCustomizado} onChange={(e) => setPrecoCustomizado(e.target.checked)} /> Autonomia
-            </label>
-          )}
-          {precoCustomizado && (
-            <input className={campo + ' w-40'} type="number" value={valorCustom} onChange={(e) => setValorCustom(e.target.value)} placeholder="preço à vista (R$)" />
-          )}
-          {perfil?.pode_bonificar && (
-            <label className="flex items-center gap-2 text-gray-300">
-              Bônus
-              <input className={campo + ' w-28'} type="number" value={bonus} onChange={(e) => setBonus(e.target.value)} placeholder="R$" />
-            </label>
-          )}
-          <button type="button" onClick={() => setReforcosAberto((v) => !v)} className="flex items-center gap-1.5 text-gray-300 hover:text-white ml-auto">
-            Reforços
-            {qtd > 0 && <span className="text-xs text-[#fe5009]">{qtd} · {brl(totalReforcos)}</span>}
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${reforcosAberto ? 'rotate-180' : ''}`}><path d="m6 9 6 6 6-6" /></svg>
           </button>
         </div>
 
