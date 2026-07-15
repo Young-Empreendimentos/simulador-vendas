@@ -24,6 +24,12 @@ type Resumo = {
   total_pago: number
   multiplicador: number
 }
+type Interno = {
+  base_comissao: number
+  comissao: number
+  bonus: number
+  comissao_total: number
+}
 type Resultado = {
   sucesso: true
   empreendimento: string
@@ -33,6 +39,7 @@ type Resultado = {
   autonomia_aplicada: boolean
   status_lote: string | null
   disponivel: boolean
+  interno: Interno
   resumo: Resumo
   reforcos: { mes: number; valor: string; data_str: string }[]
 }
@@ -49,6 +56,116 @@ function paramsIniciais() {
   return { empreendimento: empMatch ?? '', lote: p.get('lote') ?? '' }
 }
 
+// Ícone de olho (abre/fecha a comissão)
+function Olho({ aberto }: { aberto: boolean }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+      <circle cx="12" cy="12" r="3" />
+      {!aberto && <line x1="3" y1="3" x2="21" y2="21" />}
+    </svg>
+  )
+}
+
+// Card de uma simulação (com a comissão escondida atrás do olhinho)
+function CardSimulacao({ r }: { r: Resultado }) {
+  const [verComissao, setVerComissao] = useState(false)
+  return (
+    <div className="bg-[#141414] border border-[#262626] rounded-xl p-6 space-y-4">
+      <div className="flex items-start justify-between">
+        <div>
+          <h2 className="font-display text-white text-lg">{r.empreendimento} · Lote {r.num_lote}</h2>
+          <div className="flex gap-2 mt-1">
+            {r.promocional && (
+              <span className="text-[10px] uppercase tracking-wide text-[#00bcbc] border border-[#00bcbc]/40 rounded px-1.5 py-0.5">Promoção</span>
+            )}
+            {r.autonomia_aplicada && (
+              <span className="text-[10px] uppercase tracking-wide text-[#004ebf] border border-[#004ebf]/40 rounded px-1.5 py-0.5">Autonomia</span>
+            )}
+          </div>
+        </div>
+        <div className="text-right">
+          <p className="text-xs text-gray-500">Parcela mensal</p>
+          <p className="font-display text-2xl text-[#fe5009]">{brl(r.resumo.parcela_mensal)}</p>
+          <p className="text-xs text-gray-500">{r.resumo.prazo_meses}x</p>
+        </div>
+      </div>
+
+      {!r.disponivel && r.status_lote && (
+        <p className="text-xs text-yellow-300 bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-3 py-2">
+          ⚠️ Atenção: este lote está como <strong>{r.status_lote}</strong> no Sienge — confirme a disponibilidade antes de prosseguir.
+        </p>
+      )}
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-px bg-[#262626] rounded-lg overflow-hidden text-sm">
+        {[
+          ['Valor à vista', brl(r.resumo.valor_lote_av)],
+          ['Entrada', brl(r.resumo.entrada)],
+          ['Parcelas', `${r.resumo.prazo_meses}x de ${brl(r.resumo.parcela_mensal)}`],
+          ['Total das parcelas', brl(r.resumo.total_parcelas)],
+          ['Reforços', brl(r.resumo.total_reforcos)],
+          [`ITBI (${r.resumo.itbi_percentual}%)`, brl(r.resumo.itbi)],
+          ['Cartório', brl(r.resumo.cartorio)],
+        ].map(([k, v]) => (
+          <div key={k} className="bg-[#141414] p-3">
+            <p className="text-gray-500 text-xs">{k}</p>
+            <p className="text-white">{v}</p>
+          </div>
+        ))}
+      </div>
+
+      {r.reforcos.length > 0 && (
+        <div>
+          <p className="text-xs text-gray-400 mb-1">Reforços</p>
+          <ul className="text-sm text-gray-300 space-y-0.5">
+            {r.reforcos.map((x, i) => (
+              <li key={i}>Mês {x.mes}: {brl(Number(x.valor))}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {r.promo_descricao && <p className="text-xs text-[#00bcbc]">{r.promo_descricao}</p>}
+
+      {/* Comissão (interna) — escondida atrás do olhinho */}
+      <div className="border-t border-[#262626] pt-3">
+        <button
+          onClick={() => setVerComissao((v) => !v)}
+          className="text-xs text-gray-400 hover:text-white flex items-center gap-1.5"
+        >
+          <Olho aberto={verComissao} />
+          {verComissao ? 'ocultar comissão' : 'ver comissão (interno)'}
+        </button>
+        {verComissao && (
+          <div className="mt-2 rounded-lg border border-[#333] bg-[#0d0d0d] p-3 text-sm space-y-1">
+            <div className="flex justify-between">
+              <span className="text-gray-400">Comissão (5%)</span>
+              <span className="text-white">{brl(r.interno.comissao)}</span>
+            </div>
+            {r.interno.bonus > 0 && (
+              <div className="flex justify-between">
+                <span className="text-gray-400">Bônus</span>
+                <span className="text-white">{brl(r.interno.bonus)}</span>
+              </div>
+            )}
+            {r.interno.bonus > 0 && (
+              <div className="flex justify-between border-t border-[#262626] mt-1 pt-1">
+                <span className="text-gray-300">Total</span>
+                <span className="text-[#fe5009]">{brl(r.interno.comissao_total)}</span>
+              </div>
+            )}
+            <p className="text-[10px] text-gray-600 pt-1">Informação interna — não faz parte da proposta ao cliente.</p>
+          </div>
+        )}
+      </div>
+
+      <p className="text-[11px] text-gray-600">
+        ITBI e cartório embutidos nas parcelas. Simulação sem valor contratual — sujeita a conferência.
+      </p>
+    </div>
+  )
+}
+
 export default function Simulador() {
   const { perfil } = useAuth()
   const inicial = useMemo(paramsIniciais, [])
@@ -61,10 +178,11 @@ export default function Simulador() {
   const [promocional, setPromocional] = useState(false)
   const [precoCustomizado, setPrecoCustomizado] = useState(false)
   const [valorCustom, setValorCustom] = useState('')
+  const [bonus, setBonus] = useState('')
 
   const [carregando, setCarregando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
-  const [resultado, setResultado] = useState<Resultado | null>(null)
+  const [resultados, setResultados] = useState<Resultado[]>([])
   const [confirmacao, setConfirmacao] = useState<{ status_lote: string; mensagem: string } | null>(null)
 
   const ehMontecarlo = empreendimento.toLowerCase() === 'montecarlo'
@@ -90,7 +208,6 @@ export default function Simulador() {
 
   async function simular(confirmarFlag = false) {
     setErro(null)
-    setResultado(null)
     if (!confirmarFlag) setConfirmacao(null)
     if (!empreendimento) return setErro('Selecione o empreendimento.')
     if (!numLote.trim()) return setErro('Informe o número do lote.')
@@ -104,6 +221,7 @@ export default function Simulador() {
       confirmar: confirmarFlag,
     }
     if (precoCustomizado) body.valor_lote = Number(valorCustom) || 0
+    if (perfil?.pode_bonificar) body.bonus = Number(bonus) || 0
     body.prazo_meses = Number(prazo) || 0
     body.reforcos = reforcos
       .filter((r) => r.mes && r.valor)
@@ -135,7 +253,7 @@ export default function Simulador() {
         return
       }
       setConfirmacao(null)
-      setResultado(data as Resultado)
+      setResultados((prev) => [data as Resultado, ...prev]) // mais recente no topo
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Falha ao simular.')
     } finally {
@@ -150,7 +268,7 @@ export default function Simulador() {
   return (
     <div className="grid gap-6 lg:grid-cols-[380px_1fr] max-w-5xl">
       {/* ---- Formulário ---- */}
-      <div className="bg-[#141414] border border-[#262626] rounded-xl p-5 space-y-4 h-fit">
+      <div className="bg-[#141414] border border-[#262626] rounded-xl p-5 space-y-4 h-fit lg:sticky lg:top-6">
         <h2 className="font-display text-white text-base">Nova simulação</h2>
 
         <div>
@@ -215,6 +333,14 @@ export default function Simulador() {
           </div>
         )}
 
+        {perfil?.pode_bonificar && (
+          <div>
+            <label className={label}>Bônus na comissão (R$)</label>
+            <input className={campo} type="number" value={bonus} onChange={(e) => setBonus(e.target.value)} placeholder="opcional" />
+            <p className="text-[10px] text-gray-600 mt-1">Some à comissão · teto: comissão + bônus ≤ entrada.</p>
+          </div>
+        )}
+
         <button
           onClick={() => simular(false)}
           disabled={carregando}
@@ -228,9 +354,9 @@ export default function Simulador() {
         )}
       </div>
 
-      {/* ---- Resultado ---- */}
-      <div>
-        {confirmacao ? (
+      {/* ---- Resultados (empilham, mais recente no topo) ---- */}
+      <div className="space-y-4">
+        {confirmacao && (
           <div className="bg-[#141414] border border-yellow-500/40 rounded-xl p-6 space-y-4">
             <div className="flex items-center gap-2">
               <span className="text-yellow-400 text-xl">⚠️</span>
@@ -253,74 +379,17 @@ export default function Simulador() {
               </button>
             </div>
           </div>
-        ) : !resultado ? (
-          <div className="bg-[#141414] border border-dashed border-[#2a2a2a] rounded-xl p-8 text-center text-gray-500 text-sm h-full flex items-center justify-center">
+        )}
+
+        {resultados.length === 0 && !confirmacao && (
+          <div className="bg-[#141414] border border-dashed border-[#2a2a2a] rounded-xl p-8 text-center text-gray-500 text-sm min-h-[200px] flex items-center justify-center">
             Preencha os dados e clique em <span className="text-gray-300 mx-1">Simular</span> para ver a proposta.
           </div>
-        ) : (
-          <div className="bg-[#141414] border border-[#262626] rounded-xl p-6 space-y-5">
-            <div className="flex items-start justify-between">
-              <div>
-                <h2 className="font-display text-white text-lg">{resultado.empreendimento} · Lote {resultado.num_lote}</h2>
-                <div className="flex gap-2 mt-1">
-                  {resultado.promocional && (
-                    <span className="text-[10px] uppercase tracking-wide text-[#00bcbc] border border-[#00bcbc]/40 rounded px-1.5 py-0.5">Promoção</span>
-                  )}
-                  {resultado.autonomia_aplicada && (
-                    <span className="text-[10px] uppercase tracking-wide text-[#004ebf] border border-[#004ebf]/40 rounded px-1.5 py-0.5">Autonomia</span>
-                  )}
-                </div>
-              </div>
-              <div className="text-right">
-                <p className="text-xs text-gray-500">Parcela mensal</p>
-                <p className="font-display text-2xl text-[#fe5009]">{brl(resultado.resumo.parcela_mensal)}</p>
-                <p className="text-xs text-gray-500">{resultado.resumo.prazo_meses}x</p>
-              </div>
-            </div>
-
-            {!resultado.disponivel && resultado.status_lote && (
-              <p className="text-xs text-yellow-300 bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-3 py-2">
-                ⚠️ Atenção: este lote está como <strong>{resultado.status_lote}</strong> no Sienge — confirme a disponibilidade antes de prosseguir.
-              </p>
-            )}
-
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-px bg-[#262626] rounded-lg overflow-hidden text-sm">
-              {[
-                ['Valor à vista', brl(resultado.resumo.valor_lote_av)],
-                ['Entrada', brl(resultado.resumo.entrada)],
-                ['Parcelas', `${resultado.resumo.prazo_meses}x de ${brl(resultado.resumo.parcela_mensal)}`],
-                ['Total das parcelas', brl(resultado.resumo.total_parcelas)],
-                ['Reforços', brl(resultado.resumo.total_reforcos)],
-                [`ITBI (${resultado.resumo.itbi_percentual}%)`, brl(resultado.resumo.itbi)],
-                ['Cartório', brl(resultado.resumo.cartorio)],
-              ].map(([k, v]) => (
-                <div key={k} className="bg-[#141414] p-3">
-                  <p className="text-gray-500 text-xs">{k}</p>
-                  <p className="text-white">{v}</p>
-                </div>
-              ))}
-            </div>
-
-            {resultado.reforcos.length > 0 && (
-              <div>
-                <p className="text-xs text-gray-400 mb-1">Reforços</p>
-                <ul className="text-sm text-gray-300 space-y-0.5">
-                  {resultado.reforcos.map((r, i) => (
-                    <li key={i}>Mês {r.mes}: {brl(Number(r.valor))}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {resultado.promo_descricao && (
-              <p className="text-xs text-[#00bcbc]">{resultado.promo_descricao}</p>
-            )}
-
-            <p className="text-[11px] text-gray-600 border-t border-[#262626] pt-3">
-              ITBI e cartório embutidos nas parcelas. Simulação sem valor contratual — sujeita a conferência.
-            </p>
-          </div>
         )}
+
+        {resultados.map((r, i) => (
+          <CardSimulacao key={resultados.length - i} r={r} />
+        ))}
       </div>
     </div>
   )

@@ -273,6 +273,21 @@ Deno.serve(async (req: Request) => {
   valor_nominal = entrada + total_parcelas + total_reforcos_nominal;
   const multiplicador = valor_av > 0 ? valor_nominal / valor_av : 0;
 
+  // Comissão (interna) — 5% sobre a base. Base = preço aplicado na autonomia;
+  // senão o preço de tabela (na promoção a base continua sendo o de tabela).
+  const base_comissao = preco_customizado ? valor_av : preco_av_banco;
+  const comissao = base_comissao * 0.05;
+  // Bônus (opcional) — só usuário habilitado; teto: comissão + bônus ≤ entrada.
+  const bonus_pedido = parseFloat(String(raw.bonus ?? 0)) || 0;
+  let bonus = 0;
+  if (bonus_pedido > 0) {
+    if (!perfil.pode_bonificar) return j({ erro: "BONUS_NEGADO", mensagem: "Seu usuário não pode aplicar bonificação." }, 403);
+    if (comissao + bonus_pedido > entrada) {
+      return j({ erro: "BONUS_TETO", mensagem: `Bônus alto demais: comissão + bônus (R$ ${(comissao + bonus_pedido).toFixed(2)}) não pode passar da entrada (R$ ${entrada.toFixed(2)}).` });
+    }
+    bonus = bonus_pedido;
+  }
+
   // Resposta ao cliente — SEM juros.
   return j({
     sucesso: true,
@@ -283,6 +298,12 @@ Deno.serve(async (req: Request) => {
     autonomia_aplicada: preco_customizado,
     status_lote,
     disponivel,
+    interno: {
+      base_comissao: Number(base_comissao.toFixed(2)),
+      comissao: Number(comissao.toFixed(2)),
+      bonus: Number(bonus.toFixed(2)),
+      comissao_total: Number((comissao + bonus).toFixed(2)),
+    },
     resumo: {
       valor_lote_av: Number(valor_av.toFixed(2)),
       valor_tabela: Number(preco_av_banco.toFixed(2)),
