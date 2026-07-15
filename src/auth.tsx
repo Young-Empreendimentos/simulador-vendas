@@ -43,10 +43,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setStatus('unauthenticated')
         return
       }
-      // RLS devolve APENAS a própria linha do usuário (por auth.uid()/email).
+      // Filtra pela própria linha. (Admin enxerga todas as linhas via RLS, então
+      // sem este filtro o maybeSingle receberia várias e falharia.)
+      const email = (sess.user.email ?? '').toLowerCase()
       const { data, error } = await supabase
         .from('simulador_usuarios')
         .select('id,email,nome,papel,pode_autonomia,pode_bonificar,ativo')
+        .eq('email', email)
         .maybeSingle()
       if (!ativo) return
       if (error) {
