@@ -77,6 +77,28 @@ Deno.serve(async (req: Request) => {
   const preco_customizado = raw.preco_customizado === true || raw.preco_customizado === "true";
   const promocional = raw.promocional === true || raw.promocional === "true";
 
+  // 4b) Disponibilidade (Sienge) — aviso suave. Se o lote não estiver "disponível"
+  // e o usuário ainda não confirmou, devolve requer_confirmacao SEM calcular.
+  // Se confirmar (ou não houver status no Sienge), segue normalmente.
+  const confirmar = raw.confirmar === true || raw.confirmar === "true";
+  const STATUS_LABEL: Record<string, string> = {
+    D: "disponível", V: "vendido", R: "reserva técnica", E: "permuta",
+    G: "vendido a terceiros", T: "transferido", P: "proposta",
+  };
+  const { data: cs } = await admin.rpc("get_status_lote", { p_nome: empreendimento_input, p_num: num_lote });
+  const status_cod = typeof cs === "string" ? cs : null;
+  const disponivel = status_cod === "D";
+  const status_lote = status_cod ? (STATUS_LABEL[status_cod] ?? "indisponível") : null;
+  if (status_cod && !disponivel && !confirmar) {
+    return j({
+      requer_confirmacao: true,
+      status_lote,
+      empreendimento: loteDb.empreendimento,
+      num_lote: loteDb.num_lote,
+      mensagem: `O lote ${loteDb.num_lote} de ${loteDb.empreendimento} está como ${status_lote}. Deseja simular mesmo assim?`,
+    });
+  }
+
   // 5) Promoção (opcional)
   let preco_promocional_db: number | null = null;
   let prazo_maximo_promo_banco = 0;
@@ -259,6 +281,8 @@ Deno.serve(async (req: Request) => {
     promocional: promocional,
     promo_descricao: promo_descricao_banco || null,
     autonomia_aplicada: preco_customizado,
+    status_lote,
+    disponivel,
     resumo: {
       valor_lote_av: Number(valor_av.toFixed(2)),
       valor_tabela: Number(preco_av_banco.toFixed(2)),

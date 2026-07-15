@@ -31,6 +31,8 @@ type Resultado = {
   promocional: boolean
   promo_descricao: string | null
   autonomia_aplicada: boolean
+  status_lote: string | null
+  disponivel: boolean
   resumo: Resumo
   reforcos: { mes: number; valor: string; data_str: string }[]
 }
@@ -63,6 +65,7 @@ export default function Simulador() {
   const [carregando, setCarregando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [resultado, setResultado] = useState<Resultado | null>(null)
+  const [confirmacao, setConfirmacao] = useState<{ status_lote: string; mensagem: string } | null>(null)
 
   const ehMontecarlo = empreendimento.toLowerCase() === 'montecarlo'
   const podeAutonomia = !!perfil?.pode_autonomia && ehMontecarlo
@@ -85,9 +88,10 @@ export default function Simulador() {
     setReforcos((r) => r.filter((_, j) => j !== i))
   }
 
-  async function simular() {
+  async function simular(confirmarFlag = false) {
     setErro(null)
     setResultado(null)
+    if (!confirmarFlag) setConfirmacao(null)
     if (!empreendimento) return setErro('Selecione o empreendimento.')
     if (!numLote.trim()) return setErro('Informe o número do lote.')
 
@@ -97,6 +101,7 @@ export default function Simulador() {
       entrada: Number(entrada) || 0,
       promocional,
       preco_customizado: precoCustomizado,
+      confirmar: confirmarFlag,
     }
     if (precoCustomizado) body.valor_lote = Number(valorCustom) || 0
     body.prazo_meses = Number(prazo) || 0
@@ -120,10 +125,16 @@ export default function Simulador() {
         setErro(msg)
         return
       }
+      // Lote não disponível: pede confirmação antes de calcular.
+      if (data?.requer_confirmacao) {
+        setConfirmacao({ status_lote: data.status_lote, mensagem: data.mensagem })
+        return
+      }
       if (data?.erro) {
         setErro(data.mensagem || data.erro)
         return
       }
+      setConfirmacao(null)
       setResultado(data as Resultado)
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Falha ao simular.')
@@ -205,7 +216,7 @@ export default function Simulador() {
         )}
 
         <button
-          onClick={simular}
+          onClick={() => simular(false)}
           disabled={carregando}
           className="w-full bg-[#fe5009] hover:bg-orange-600 disabled:opacity-50 transition text-white font-medium py-2.5 rounded-lg"
         >
@@ -219,7 +230,30 @@ export default function Simulador() {
 
       {/* ---- Resultado ---- */}
       <div>
-        {!resultado ? (
+        {confirmacao ? (
+          <div className="bg-[#141414] border border-yellow-500/40 rounded-xl p-6 space-y-4">
+            <div className="flex items-center gap-2">
+              <span className="text-yellow-400 text-xl">⚠️</span>
+              <h2 className="font-display text-white text-base">Lote não está disponível</h2>
+            </div>
+            <p className="text-sm text-gray-300">{confirmacao.mensagem}</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => simular(true)}
+                disabled={carregando}
+                className="flex-1 bg-[#fe5009] hover:bg-orange-600 disabled:opacity-50 transition text-white font-medium py-2 rounded-lg"
+              >
+                {carregando ? 'Calculando…' : 'Simular mesmo assim'}
+              </button>
+              <button
+                onClick={() => setConfirmacao(null)}
+                className="flex-1 border border-[#333] text-gray-300 hover:text-white py-2 rounded-lg"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        ) : !resultado ? (
           <div className="bg-[#141414] border border-dashed border-[#2a2a2a] rounded-xl p-8 text-center text-gray-500 text-sm h-full flex items-center justify-center">
             Preencha os dados e clique em <span className="text-gray-300 mx-1">Simular</span> para ver a proposta.
           </div>
@@ -243,6 +277,12 @@ export default function Simulador() {
                 <p className="text-xs text-gray-500">{resultado.resumo.prazo_meses}x</p>
               </div>
             </div>
+
+            {!resultado.disponivel && resultado.status_lote && (
+              <p className="text-xs text-yellow-300 bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-3 py-2">
+                ⚠️ Atenção: este lote está como <strong>{resultado.status_lote}</strong> no Sienge — confirme a disponibilidade antes de prosseguir.
+              </p>
+            )}
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-px bg-[#262626] rounded-lg overflow-hidden text-sm">
               {[
