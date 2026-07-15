@@ -4,10 +4,9 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 // ============================================================
 // GERADOR DE CONTRATO — Young (port determinístico do n8n "Gerador de Contratos")
 // Etapa 3a: monta os campos do contrato (cláusulas 3.x/4.x, honorários, vendedora,
-// placeholders) de forma determinística e SEGURA. NÃO gera o Google Doc ainda
-// (isso é a 3b, que depende dos segredos da service account).
-// Segurança: exige usuário logado (verify_jwt) + allowlist; base da comissão e
-// bônus validados no servidor (pode_bonificar), nunca por nome digitado.
+// placeholders) de forma determinística e SEGURA. Puxa do banco (service_role) o
+// que o bot buscava — matrícula/área/ônus/proprietário, dados bancários e corretor —
+// em vez de pedir pro usuário digitar. NÃO gera o Google Doc ainda (3b).
 // ============================================================
 
 const CORS = {
@@ -23,8 +22,10 @@ function norm(s: unknown): string {
 }
 const round2 = (v: unknown) => Math.round(Number(v) * 100) / 100;
 const fmt = (v: unknown) => Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const soDigitos = (s: unknown) => String(s ?? "").replace(/\D/g, "");
+const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+const dataExtenso = (d: Date) => `${d.getDate()} de ${MESES[d.getMonth()]} de ${d.getFullYear()}`;
 
-// valor por extenso (idêntico ao n8n)
 function extenso(valor: number): string {
   const n = Math.round(Number(valor) * 100);
   const reais = Math.floor(n / 100);
@@ -89,15 +90,17 @@ Deno.serve(async (req: Request) => {
     .eq("email", user.email.toLowerCase()).maybeSingle();
   if (!perfil || !perfil.ativo) return j({ erro: "SEM_PERMISSAO", mensagem: "Acesso não liberado." }, 403);
 
-  // 2) Entrada
+  // 2) Entrada (só o que é humano; o resto vem do banco)
   let raw: Record<string, unknown> = {};
   try { raw = await req.json(); } catch { return j({ erro: "ENTRADA", mensagem: "JSON inválido." }, 400); }
 
-  const tipo = (String(raw.tipo_contrato || "aprazo")).toLowerCase(); // 'avista' | 'aprazo'
+  const tipo = String(raw.tipo_contrato || "aprazo").toLowerCase(); // 'avista' | 'aprazo'
   const empreendimento_input = String(raw.empreendimento ?? "");
   const num_lote = raw.num_lote != null ? String(raw.num_lote) : String(raw.Lote ?? "");
+  if (!num_lote || !empreendimento_input) return j({ erro: "PARAMETRO_FALTANDO", mensagem: "empreendimento e num_lote são obrigatórios." }, 400);
+  const alvo = norm(empreendimento_input);
 
-  // Números financeiros (vêm da simulação já feita no servidor)
+  // números financeiros (da simulação)
   const valor_lote_av = round2(raw.valor_lote_av || 0);
   const entrada_bruta = round2(raw.entrada_bruta ?? raw.entrada ?? 0);
   const parcela = round2(raw.parcela_mensal || 0);
@@ -107,7 +110,6 @@ Deno.serve(async (req: Request) => {
   const itbi_cartorio = round2(itbi + cartorio);
   const data_entrada = String(raw.data_entrada || "");
   const data_prim_venc = String(raw.data_primeiro_vencimento || "");
-  const dados_banco_emp = String(raw.dados_bancarios_empresa || "");
   const reforcos = (Array.isArray(raw.reforcos) ? raw.reforcos as Array<Record<string, unknown>> : [])
     .map((r) => ({ valor: round2(r.valor || 0), data_str: String(r.data_str ?? r.data ?? "") }))
     .filter((r) => r.valor > 0);
@@ -115,56 +117,65 @@ Deno.serve(async (req: Request) => {
   const tem_corretor = !!raw.tem_corretor;
   const bonus_solicitado = round2(raw.bonus_comissao ?? raw.bonus ?? 0);
 
-  // 3) Base da comissão — do banco (service_role), como no n8n:
-  //    autonomia (aplicado ≠ tabela e ≠ promo, lote com preço mínimo) → aplicado;
-  //    senão → preço de tabela (promoção usa tabela).
-  if (!num_lote || !empreendimento_input) {
-    return j({ erro: "PARAMETRO_FALTANDO", mensagem: "empreendimento e num_lote (Lote) são obrigatórios para a base da comissão." }, 400);
-  }
-  const alvo = norm(empreendimento_input);
+  // 3) Dados cadastrais do lote (matrícula/área/ônus/PROPRIETÁRIO) — comercial_lotes_detalhes
+  const { data: dets } = await admin
+    .from("comercial_lotes_detalhes")
+    .select("empreendimento,num_lote,matricula,area,onus,proprietario")
+    .eq("num_lote", num_lote);
+  const det = (dets ?? []).find((d) => norm(d.empreendimento) === alvo);
+  if (!det) return j({ erro: "LOTE_DETALHES_NAO_ENCONTRADO", mensagem: `Sem dados cadastrais (matrícula/área/proprietário) para o lote ${num_lote} de "${empreendimento_input}".` }, 404);
+  const proprietario = norm(det.proprietario) === "horizonte" ? "horizonte" : "young";
+  const matricula = String(det.matricula ?? "");
+  const area = String(det.area ?? "");
+  const onusVal = (det.onus == null || String(det.onus).trim() === "" || norm(det.onus) === "n") ? "Não há." : String(det.onus);
 
-  // Template do contrato (por empreendimento × tipo × proprietário) — do banco.
+  // 4) Template (por empreendimento + proprietário + tipo) — comercial_templates_contratos
   const { data: templates } = await admin
     .from("comercial_templates_contratos")
     .select("empreendimento,proprietario,id_doc_avista,id_doc_aprazo");
-  const tRows = (templates ?? []).filter((t) => norm(t.empreendimento) === alvo);
-  if (tRows.length === 0) return j({ erro: "TEMPLATE_NAO_ENCONTRADO", mensagem: `Sem template de contrato cadastrado para "${empreendimento_input}".` }, 404);
-  let tRow = tRows[0];
-  if (tRows.length > 1) {
-    const propPed = norm(raw.proprietario || "");
-    const achou = tRows.find((t) => norm(t.proprietario) === propPed);
-    if (!achou) return j({ erro: "PROPRIETARIO_AMBIGUO", mensagem: "Este empreendimento tem mais de uma vendedora. Informe o proprietário.", opcoes: tRows.map((t) => t.proprietario) });
-    tRow = achou;
-  }
-  const proprietario = norm(tRow.proprietario) === "horizonte" ? "horizonte" : "young";
-  const template_id = tipo === "avista" ? (tRow.id_doc_avista || "") : (tRow.id_doc_aprazo || "");
-  if (!template_id) return j({ erro: "TEMPLATE_TIPO_FALTANDO", mensagem: `Template ${tipo === "avista" ? "à vista" : "à prazo"} não cadastrado para "${empreendimento_input}".` }, 404);
+  const tRow = (templates ?? []).find((t) => norm(t.empreendimento) === alvo && norm(t.proprietario) === proprietario)
+    ?? (templates ?? []).find((t) => norm(t.empreendimento) === alvo);
+  const template_id = tRow ? (tipo === "avista" ? (tRow.id_doc_avista || "") : (tRow.id_doc_aprazo || "")) : "";
+  if (!template_id) return j({ erro: "TEMPLATE_NAO_ENCONTRADO", mensagem: `Template ${tipo === "avista" ? "à vista" : "à prazo"} não cadastrado para "${empreendimento_input}" (${proprietario}).` }, 404);
 
+  // 5) Dados bancários da empresa (CREDORA) — comercial_dados_bancarios
+  const { data: dbs } = await admin
+    .from("comercial_dados_bancarios").select("empreendimento,dados_bancarios,proprietario");
+  const dbRow = (dbs ?? []).find((x) => norm(x.empreendimento) === alvo && norm(x.proprietario) === proprietario);
+  const dados_banco_emp = String(dbRow?.dados_bancarios ?? "");
+
+  // 6) Base da comissão — comercial_tabela_precos (autonomia → aplicado; senão tabela)
   const { data: linhas } = await admin
     .from("comercial_tabela_precos").select("empreendimento,num_lote,preco_av,preco_minimo,created_at")
     .eq("num_lote", num_lote).order("created_at", { ascending: false });
   const precoRow = (linhas ?? []).find((l) => norm(l.empreendimento) === alvo);
   const preco_av_tabela = round2(precoRow?.preco_av || 0);
   const preco_minimo_tab = precoRow?.preco_minimo != null ? round2(precoRow.preco_minimo) : null;
-  if (!(preco_av_tabela > 0)) {
-    return j({ erro: "COMISSAO_FALHA_BUSCA_PRECO", mensagem: "Não foi possível obter o preço à vista de tabela do lote para a base da comissão." }, 502);
-  }
-  // preços promocionais do lote (para classificar promoção vs autonomia)
+  if (!(preco_av_tabela > 0)) return j({ erro: "COMISSAO_FALHA_BUSCA_PRECO", mensagem: "Não foi possível obter o preço à vista de tabela do lote para a base da comissão." }, 502);
   const { data: promoPrecos } = await admin
-    .from("comercial_promocoes_precos").select("num_lote,empreendimento,preco_promocional")
-    .eq("num_lote", num_lote);
-  const promoPrices = (promoPrecos ?? [])
-    .filter((p) => norm(p.empreendimento) === alvo)
-    .map((p) => round2(p.preco_promocional)).filter((v) => v > 0);
-
+    .from("comercial_promocoes_precos").select("num_lote,empreendimento,preco_promocional").eq("num_lote", num_lote);
+  const promoPrices = (promoPrecos ?? []).filter((p) => norm(p.empreendimento) === alvo).map((p) => round2(p.preco_promocional)).filter((v) => v > 0);
   const TOL = 0.01;
   const isAv = Math.abs(valor_lote_av - preco_av_tabela) < TOL;
   const isPromo = promoPrices.some((p) => Math.abs(valor_lote_av - p) < TOL);
-  const elegivelAutonomia = preco_minimo_tab != null && preco_minimo_tab > 0;
-  const ehAutonomia = elegivelAutonomia && !isAv && !isPromo;
+  const ehAutonomia = preco_minimo_tab != null && preco_minimo_tab > 0 && !isAv && !isPromo;
   const base_comissao = ehAutonomia ? valor_lote_av : preco_av_tabela;
 
-  // Honorários só existem com corretor (intermediação). Bônus só p/ pode_bonificar.
+  // 7) Corretor (intermediação) — comercial_corretores por CPF/CNPJ/nome
+  let corretor: Record<string, unknown> | null = null;
+  if (tem_corretor) {
+    const busca = String(raw.corretor_busca ?? raw.nome_corretor ?? "").trim();
+    if (!busca) return j({ erro: "CORRETOR_SEM_BUSCA", mensagem: "Informe CPF/CNPJ ou nome do corretor." }, 400);
+    const { data: corrs } = await admin.from("comercial_corretores").select("*");
+    const bn = norm(busca);
+    const bd = soDigitos(busca);
+    corretor = (corrs ?? []).find((c) =>
+      (bd && (soDigitos(c.cpf) === bd || soDigitos(c.cnpj) === bd)) || (bn.length >= 3 && norm(c.nome).includes(bn))
+    ) ?? null;
+    if (!corretor) return j({ erro: "CORRETOR_NAO_ENCONTRADO", mensagem: `Corretor "${busca}" não encontrado no cadastro.` }, 404);
+  }
+
+  // 8) Honorários (só com corretor). Bônus só p/ pode_bonificar.
   const comissao_base = tem_corretor ? round2(base_comissao * 0.05) : 0;
   let bonificacao = 0;
   if (tem_corretor && bonus_solicitado > 0) {
@@ -173,13 +184,11 @@ Deno.serve(async (req: Request) => {
   }
   const honorarios = round2(comissao_base + bonificacao);
 
-  // 4) Validações
+  // 9) Validações + cálculo das cláusulas
   if (tipo === "aprazo" && entrada_bruta <= 0) return j({ erro: "ENTRADA_ZERO", mensagem: "entrada_bruta veio zerada em contrato à prazo." }, 400);
   if (tipo === "aprazo" && parcela <= 0) return j({ erro: "PARCELA_ZERO", mensagem: "parcela_mensal veio zerada em contrato à prazo." }, 400);
-
   const total_parcelas = tipo === "aprazo" ? round2(parcela * prazo) : 0;
   const total_reforcos = round2(reforcos.reduce((s, r) => s + r.valor, 0));
-
   let preco_total: number, valor_imovel_31: number;
   if (tipo === "avista") {
     valor_imovel_31 = round2(entrada_bruta - honorarios);
@@ -189,11 +198,10 @@ Deno.serve(async (req: Request) => {
     valor_imovel_31 = round2(preco_total - honorarios - itbi_cartorio);
   }
   const entrada_liquida = round2(entrada_bruta - honorarios);
-
-  if (valor_imovel_31 < 0) return j({ erro: "VALOR_IMOVEL_NEGATIVO", mensagem: `Valor do Imóvel calculado é negativo (${fmt(valor_imovel_31)}). Verifique honorários e ITBI.` });
+  if (valor_imovel_31 < 0) return j({ erro: "VALOR_IMOVEL_NEGATIVO", mensagem: `Valor do Imóvel calculado é negativo (${fmt(valor_imovel_31)}).` });
   if (tem_corretor && honorarios > entrada_bruta) return j({ erro: "HONORARIOS_ALTOS", mensagem: `Honorários (${fmt(honorarios)}) maiores que a entrada (${fmt(entrada_bruta)}).` });
 
-  // 5) Campo 3.x — Valor do Imóvel
+  // Campo 3.x — Valor do Imóvel
   let item = 1;
   const linhas_valor: string[] = [];
   linhas_valor.push(`3.${item++} VALOR DO IMÓVEL: ${vf(valor_imovel_31)}`);
@@ -202,10 +210,10 @@ Deno.serve(async (req: Request) => {
   linhas_valor.push(`3.${item++} PREÇO TOTAL DO IMÓVEL: ${vf(preco_total)}`);
   const Valor_Imovel = linhas_valor.join("\n");
 
-  // 6) Campo 4.x — Forma de Pagamento
+  // Campo 4.x — Forma de Pagamento
   let pg = 1;
   const linhas_pgto: string[] = [];
-  const dados_banco_cor = String(raw.dados_bancarios_corretor || "");
+  const dados_banco_cor = String(corretor?.dados_bancarios ?? "");
   if (tipo === "avista") {
     if (tem_corretor && honorarios > 0) {
       linhas_pgto.push(`4.${pg++} ${vf(round2(preco_total - honorarios))}, através de transferência bancária, até a data de ${data_entrada} em favor da CREDORA/FIDUCIÁRIA, ${dados_banco_emp}`);
@@ -226,35 +234,29 @@ Deno.serve(async (req: Request) => {
   }
   const Forma_de_Pagamento = linhas_pgto.join("\n");
 
-  // 7) Campo 11 — Honorários
+  // Campo 11 — Honorários (corretor do banco)
   let Honorarios: string;
-  if (tem_corretor && honorarios > 0) {
-    Honorarios = `${vf(honorarios)} em favor de ${raw.nome_corretor || ""}, inscrito no CPF/CNPJ sob o nº ${raw.doc_corretor || ""}, CRECI ${raw.creci_corretor || ""}, com endereço na ${raw.endereco_corretor || ""}, ${raw.bairro_corretor || ""}, ${raw.cidade_corretor || ""}/${raw.uf_corretor || ""}, CEP ${raw.cep_corretor || ""}, fone ${raw.telefone_corretor || ""}, e-mail ${raw.email_corretor || ""}.`;
+  if (tem_corretor && honorarios > 0 && corretor) {
+    Honorarios = `${vf(honorarios)} em favor de ${corretor.nome ?? ""}, inscrito no CPF/CNPJ sob o nº ${corretor.cpf || corretor.cnpj || ""}, CRECI ${corretor.creci ?? ""}, com endereço na ${corretor.endereco ?? ""}, ${corretor.bairro ?? ""}, ${corretor.cidade ?? ""}/${corretor.uf ?? ""}, CEP ${corretor.cep ?? ""}, fone ${corretor.telefone ?? ""}, e-mail ${corretor.email ?? ""}.`;
   } else {
     Honorarios = "A presente transação não é objeto de intermediação imobiliária.";
   }
 
-  // 8) Demais placeholders
+  // Demais placeholders
   const comprador1 = String(raw.Comprador1 || "");
   const comprador2 = String(raw.Comprador2 || "");
   const nomes = comprador2 ? `${comprador1} e ${comprador2}` : comprador1;
   const condicao = tipo === "avista" ? "COMPRADOR(A,ES)" : "DEVEDOR(A,ES)/FIDUCIANTE(S)";
   const Final_Contrato = `de outro, ${nomes}, na condição de ${condicao}`;
-  const Qualificacao_Vendedora = VENDEDORA[proprietario];
-  const onus = (raw.Onus === "N" || raw.Onus === "n") ? "Não há." : String(raw.Onus || "");
+  const Data_Assinatura = dataExtenso(new Date());
 
   const campos: Record<string, string> = {
     Qualificacao_Clientes: String(raw.Qualificacao_Clientes || ""),
     Valor_Imovel, Forma_de_Pagamento, Honorarios,
-    Lote: String(raw.Lote ?? num_lote),
-    Area: String(raw.Area || ""),
-    Matricula: String(raw.Matricula || ""),
-    Onus: onus,
-    Data_Assinatura: String(raw.Data_Assinatura || ""),
-    Comprador1: comprador1, Comprador2: comprador2,
-    Final_Contrato, Qualificacao_Vendedora,
+    Lote: num_lote, Area: area, Matricula: matricula, Onus: onusVal,
+    Data_Assinatura, Comprador1: comprador1, Comprador2: comprador2,
+    Final_Contrato, Qualificacao_Vendedora: VENDEDORA[proprietario],
   };
-  // Mapa placeholder → valor (inclui o typo do template)
   const substituicoes: Record<string, string> = {
     "{{Qualificacao_Clientes}}": campos.Qualificacao_Clientes,
     "{{Valor_Imovel}}": campos.Valor_Imovel,
@@ -281,6 +283,10 @@ Deno.serve(async (req: Request) => {
     tem_corretor,
     proprietario,
     template_id,
+    // devolve o que foi puxado do banco, pra conferência no front
+    dados_lote: { matricula, area, onus: onusVal },
+    dados_banco_empresa: dados_banco_emp,
+    corretor_nome: corretor ? String(corretor.nome ?? "") : null,
     campos,
     requests,
     _calc: {
@@ -295,7 +301,6 @@ Deno.serve(async (req: Request) => {
       total_reforcos: fmt(total_reforcos),
       preco_total: fmt(preco_total),
       valor_imovel_31: fmt(valor_imovel_31),
-      check_fechamento: fmt(round2(valor_imovel_31 + honorarios + itbi_cartorio + total_parcelas + total_reforcos)),
     },
   });
 });
