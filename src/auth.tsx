@@ -75,7 +75,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signInGoogle = async () => {
     await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: window.location.origin },
+      // volta para o app sob a base do Pages (/simulador-vendas/)
+      options: { redirectTo: window.location.origin + import.meta.env.BASE_URL },
     })
   }
   const signOut = async () => {
