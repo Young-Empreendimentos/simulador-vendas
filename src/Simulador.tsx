@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from './lib/supabase'
 import { useAuth } from './auth'
 import Contrato from './Contrato'
@@ -9,7 +9,54 @@ const EMPREENDIMENTOS = [
   'Montecarlo', 'Morada da Coxilha', 'Parque Lorena 2', 'Parque Lorena Itaqui',
 ]
 
-type Reforco = { mes: string; valor: string }
+type Regra =
+  | { id: string; tipo: 'avulso'; mes: number; valor: number }
+  | { id: string; tipo: 'recorrente'; freq: number; valor: number; inicio: number; ate: 'fim' | number }
+
+// pt-BR: aceita "5.000", "5000", "5.000,50"
+const parseBRL = (s: string) => {
+  const t = String(s).replace(/\./g, '').replace(',', '.').replace(/[^\d.]/g, '')
+  const n = parseFloat(t)
+  return Number.isFinite(n) ? n : 0
+}
+const normEmp = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
+// espelha o limite do backend (default 180)
+function limiteReforco(emp: string) {
+  const e = normEmp(emp)
+  if (e.includes('aurora')) return 240
+  if (e.includes('morada da coxilha')) return 360
+  return 180
+}
+const rotuloFreq = (f: number) =>
+  f === 3 ? 'trimestral' : f === 6 ? 'semestral' : f === 12 ? 'anual' : `a cada ${f} meses`
+
+// Expande as regras -> lista achatada {mes,valor}[], com merge por mês e clamp (mes>=1, <=teto).
+function expandir(regras: Regra[], teto: number): { mes: number; valor: number }[] {
+  const mapa = new Map<number, number>()
+  const add = (mes: number, valor: number) => {
+    if (!Number.isFinite(mes) || !Number.isFinite(valor)) return
+    if (mes < 1 || mes > teto || valor <= 0) return
+    mapa.set(mes, (mapa.get(mes) || 0) + valor)
+  }
+  for (const r of regras) {
+    if (r.tipo === 'avulso') add(r.mes, r.valor)
+    else {
+      if (r.freq <= 0) continue
+      const inicio = Math.max(1, r.inicio)
+      const fim = r.ate === 'fim' ? teto : Math.min(r.ate, teto)
+      for (let m = inicio; m <= fim; m += r.freq) add(m, r.valor)
+    }
+  }
+  return [...mapa.entries()].sort((a, b) => a[0] - b[0]).map(([mes, valor]) => ({ mes, valor }))
+}
+// contagem por regra (p/ rótulo do chip) sem gerar o array
+function contaRegra(r: Regra, teto: number): number {
+  if (r.tipo === 'avulso') return r.mes >= 1 && r.mes <= teto ? 1 : 0
+  const inicio = Math.max(1, r.inicio)
+  const fim = r.ate === 'fim' ? teto : Math.min(r.ate, teto)
+  if (r.freq <= 0 || inicio > fim) return 0
+  return Math.floor((fim - inicio) / r.freq) + 1
+}
 
 type Resumo = {
   valor_lote_av: number
@@ -190,7 +237,16 @@ export default function Simulador() {
   const [numLote, setNumLote] = useState(inicial.lote)
   const [entrada, setEntrada] = useState('')
   const [prazo, setPrazo] = useState('')
-  const [reforcos, setReforcos] = useState<Reforco[]>([])
+  const [regras, setRegras] = useState<Regra[]>([])
+  const [modo, setModo] = useState<'recorrente' | 'avulso'>('recorrente')
+  const [fValor, setFValor] = useState('')
+  const [fFreq, setFFreq] = useState('12')
+  const [fFreqN, setFFreqN] = useState('')
+  const [fInicio, setFInicio] = useState('12')
+  const [fAte, setFAte] = useState<'fim' | 'mes'>('fim')
+  const [fAteMes, setFAteMes] = useState('')
+  const [fMes, setFMes] = useState('')
+  const valorRef = useRef<HTMLInputElement>(null)
   const [promocional, setPromocional] = useState(false)
   const [precoCustomizado, setPrecoCustomizado] = useState(false)
   const [valorCustom, setValorCustom] = useState('')
@@ -205,6 +261,14 @@ export default function Simulador() {
   const ehMontecarlo = empreendimento.toLowerCase() === 'montecarlo'
   const podeAutonomia = !!perfil?.pode_autonomia && ehMontecarlo
 
+  // Reforços: regras -> lista achatada (fonte única p/ régua, resumo e payload)
+  const prazoN = Number(prazo) || 0
+  const LIMITE = limiteReforco(empreendimento)
+  const teto = prazoN ? Math.min(prazoN + 6, LIMITE) : LIMITE
+  const listaReforcos = useMemo(() => expandir(regras, teto), [regras, teto])
+  const qtd = listaReforcos.length
+  const totalReforcos = listaReforcos.reduce((s, x) => s + x.valor, 0)
+
   // Se trocar de empreendimento e perder o direito, zera a autonomia.
   useEffect(() => {
     if (!podeAutonomia && precoCustomizado) {
@@ -213,14 +277,36 @@ export default function Simulador() {
     }
   }, [podeAutonomia, precoCustomizado])
 
-  function addReforco() {
-    setReforcos((r) => [...r, { mes: '', valor: '' }])
+  function addRegra() {
+    const valor = parseBRL(fValor)
+    if (valor <= 0) return
+    const id = crypto.randomUUID()
+    if (modo === 'avulso') {
+      const mes = Number(fMes) || 0
+      if (mes < 1) return
+      setRegras((r) => [...r, { id, tipo: 'avulso', mes, valor }])
+    } else {
+      const freq = fFreq === 'custom' ? Number(fFreqN) || 0 : Number(fFreq)
+      if (freq <= 0) return
+      const inicio = Math.max(1, Number(fInicio) || freq)
+      const ate: 'fim' | number = fAte === 'fim' ? 'fim' : Number(fAteMes) || teto
+      setRegras((r) => [...r, { id, tipo: 'recorrente', freq, valor, inicio, ate }])
+    }
+    setFValor('')
+    setFMes('')
   }
-  function setReforco(i: number, campo: keyof Reforco, v: string) {
-    setReforcos((r) => r.map((x, j) => (j === i ? { ...x, [campo]: v } : x)))
+  function delRegra(id: string) {
+    setRegras((r) => r.filter((x) => x.id !== id))
   }
-  function delReforco(i: number) {
-    setReforcos((r) => r.filter((_, j) => j !== i))
+  function preset(kind: 'anual' | 'semestral' | 'unico') {
+    if (kind === 'unico') setModo('avulso')
+    else {
+      setModo('recorrente')
+      setFFreq(kind === 'anual' ? '12' : '6')
+      setFInicio(kind === 'anual' ? '12' : '6')
+      setFAte('fim')
+    }
+    requestAnimationFrame(() => valorRef.current?.focus())
   }
 
   async function simular(confirmarFlag = false) {
@@ -240,9 +326,7 @@ export default function Simulador() {
     if (precoCustomizado) body.valor_lote = Number(valorCustom) || 0
     if (perfil?.pode_bonificar) body.bonus = Number(bonus) || 0
     body.prazo_meses = Number(prazo) || 0
-    body.reforcos = reforcos
-      .filter((r) => r.mes && r.valor)
-      .map((r) => ({ mes: Number(r.mes), valor: Number(r.valor) }))
+    body.reforcos = listaReforcos
 
     setCarregando(true)
     try {
@@ -319,18 +403,107 @@ export default function Simulador() {
         </div>
 
         {/* reforços */}
-        <div>
-          <div className="flex items-center justify-between mb-1">
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
             <span className={label + ' mb-0'}>Reforços (opcional)</span>
-            <button type="button" onClick={addReforco} className="text-xs text-[#fe5009] hover:underline">+ adicionar</button>
+            {qtd > 0 && (
+              <span className="text-xs text-gray-400">{qtd} {qtd > 1 ? 'reforços' : 'reforço'} · {brl(totalReforcos)}</span>
+            )}
           </div>
-          {reforcos.map((r, i) => (
-            <div key={i} className="flex gap-2 mb-2">
-              <input className={campo} type="number" value={r.mes} onChange={(e) => setReforco(i, 'mes', e.target.value)} placeholder="mês" />
-              <input className={campo} type="number" value={r.valor} onChange={(e) => setReforco(i, 'valor', e.target.value)} placeholder="valor R$" />
-              <button type="button" onClick={() => delReforco(i)} className="text-gray-500 hover:text-red-400 px-1">✕</button>
+          <p className="text-xs text-gray-600 -mt-1">Pagamentos extras além das parcelas mensais.</p>
+
+          {/* presets de 1 clique */}
+          <div className="flex flex-wrap gap-2">
+            {([['anual', 'Anual'], ['semestral', 'Semestral'], ['unico', 'Só um reforço']] as const).map(([k, t]) => (
+              <button key={k} type="button" onClick={() => preset(k)} className="px-3 py-1.5 rounded-full border border-[#333] bg-[#0d0d0d] text-sm text-gray-300 hover:border-[#fe5009] hover:text-white transition">{t}</button>
+            ))}
+          </div>
+
+          {/* régua / linha do tempo */}
+          {prazoN > 0 ? (
+            <div className="rounded-lg bg-[#0d0d0d] border border-[#262626] px-3 pt-4 pb-2">
+              <div className="relative h-8">
+                <div className="absolute inset-x-0 top-3 h-[3px] bg-[#262626] rounded-full" />
+                {Array.from({ length: Math.floor(prazoN / 12) }, (_, i) => (i + 1) * 12).map((a) => (
+                  <div key={a} className="absolute top-1 w-px h-4 bg-[#333]" style={{ left: `${(a / prazoN) * 100}%` }} />
+                ))}
+                {listaReforcos.map((x) => (
+                  <div key={x.mes} title={`mês ${x.mes} · ${brl(x.valor)}`} className="absolute top-3 -translate-x-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-[#fe5009] ring-2 ring-[#0d0d0d]" style={{ left: `${Math.min(x.mes / prazoN, 1) * 100}%` }} />
+                ))}
+              </div>
+              <div className="flex justify-between text-[10px] text-gray-600 mt-1"><span>mês 1</span><span>{prazoN} meses</span></div>
             </div>
-          ))}
+          ) : (
+            <p className="text-xs text-gray-600">Defina o prazo para posicionar os reforços na linha do tempo.</p>
+          )}
+
+          {/* regras configuradas (chips removíveis) */}
+          {regras.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {regras.map((r) => (
+                <span key={r.id} className="inline-flex items-center gap-2 bg-[#1a1a1a] border border-[#333] rounded-full pl-3 pr-2 py-1 text-xs text-gray-200">
+                  {r.tipo === 'avulso'
+                    ? `${brl(r.valor)} · mês ${r.mes}`
+                    : `${brl(r.valor)} · ${rotuloFreq(r.freq)} · do mês ${r.inicio} ${r.ate === 'fim' ? 'até o fim' : 'até o mês ' + r.ate} (${contaRegra(r, teto)}x)`}
+                  <button type="button" aria-label="Remover reforço" onClick={() => delRegra(r.id)} className="text-gray-500 hover:text-red-400">✕</button>
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* mini-form de adição */}
+          <div className="rounded-lg bg-[#0d0d0d] border border-[#262626] p-3 space-y-3">
+            <div className="grid grid-cols-2 gap-1 bg-[#141414] p-1 rounded-lg">
+              {(['recorrente', 'avulso'] as const).map((m) => (
+                <button key={m} type="button" onClick={() => setModo(m)} className={`text-xs py-1.5 rounded-md transition ${modo === m ? 'bg-[#fe5009] text-white' : 'text-gray-400 hover:text-white'}`}>{m === 'recorrente' ? 'Repetir' : 'Uma vez'}</button>
+              ))}
+            </div>
+            <div>
+              <label className={label}>Valor do reforço (R$)</label>
+              <input ref={valorRef} className={campo} type="text" inputMode="numeric" value={fValor} onChange={(e) => setFValor(e.target.value)} placeholder="ex: 5.000" />
+            </div>
+            {modo === 'avulso' ? (
+              <div>
+                <label className={label}>No mês</label>
+                <input className={campo} type="number" value={fMes} onChange={(e) => setFMes(e.target.value)} placeholder="ex: 12" />
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={label}>Frequência</label>
+                    <select className={campo} value={fFreq} onChange={(e) => setFFreq(e.target.value)}>
+                      <option value="12">Anual</option>
+                      <option value="6">Semestral</option>
+                      <option value="3">Trimestral</option>
+                      <option value="custom">A cada N meses…</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className={label}>A partir do mês</label>
+                    <input className={campo} type="number" value={fInicio} onChange={(e) => setFInicio(e.target.value)} placeholder="12" />
+                  </div>
+                </div>
+                {fFreq === 'custom' && (
+                  <div>
+                    <label className={label}>A cada quantos meses</label>
+                    <input className={campo} type="number" value={fFreqN} onChange={(e) => setFFreqN(e.target.value)} placeholder="ex: 4" />
+                  </div>
+                )}
+                <div>
+                  <label className={label}>Repetir até</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button type="button" onClick={() => setFAte('fim')} className={`${campo} text-left ${fAte === 'fim' ? 'border-[#fe5009] text-white' : 'text-gray-400'}`}>o fim do contrato</button>
+                    <input className={campo} type="number" value={fAteMes} onFocus={() => setFAte('mes')} onChange={(e) => { setFAte('mes'); setFAteMes(e.target.value) }} placeholder="até o mês…" />
+                  </div>
+                </div>
+              </>
+            )}
+            <button type="button" onClick={addRegra} disabled={modo === 'recorrente' && fAte === 'fim' && !prazoN} className="w-full bg-[#fe5009] hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg py-2 transition">+ Adicionar reforço</button>
+            {modo === 'recorrente' && fAte === 'fim' && !prazoN && (
+              <p className="text-xs text-gray-600">Defina o prazo para usar "até o fim do contrato".</p>
+            )}
+          </div>
         </div>
 
         <label className="flex items-center gap-2 text-sm text-gray-300">
