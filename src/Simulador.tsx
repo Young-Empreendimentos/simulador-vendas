@@ -102,7 +102,6 @@ function CardSimulacao({ r }: { r: Resultado }) {
           ['Valor à vista', brl(r.resumo.valor_lote_av)],
           ['Entrada', brl(r.resumo.entrada)],
           ['Parcelas', `${r.resumo.prazo_meses}x de ${brl(r.resumo.parcela_mensal)}`],
-          ['Total em parcelas', brl(r.resumo.total_parcelas)],
           ...(r.resumo.total_reforcos > 0 ? [['Reforços', brl(r.resumo.total_reforcos)]] : []),
         ].map(([k, v]) => (
           <div key={k} className="bg-[#141414] p-3">
