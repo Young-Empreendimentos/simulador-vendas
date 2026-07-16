@@ -106,15 +106,21 @@ async function buscarCep(cep: string): Promise<{ cidade: string; uf: string; bai
 }
 // CPF e número do documento não podem ser o mesmo número (erro comum de digitação).
 const cpfDocIguais = (p: Pessoa) => !!soNum(p.cpf) && soNum(p.cpf) === soNum(p.docNumero)
-// Problemas que impedem gerar o contrato (nome e CPF obrigatórios; formatos se preenchidos).
+// Todos os campos da qualificação são OBRIGATÓRIOS (como a ETAPA 3 do bot) + validação de formato.
 function problemasPessoa(p: Pessoa, rot: string): string[] {
   const e: string[] = []
-  if (!p.nome.trim()) e.push(`${rot}: informe o nome completo.`)
-  if (!p.cpf.trim()) e.push(`${rot}: informe o CPF.`)
-  else if (!cpfValido(p.cpf)) e.push(`${rot}: CPF inválido (confira os dígitos).`)
+  const obrig: [string, string][] = [
+    [p.nome, 'o nome completo'], [p.nacionalidade, 'a nacionalidade'], [p.nascimento, 'a data de nascimento'],
+    [p.profissao, 'a profissão'], [p.cpf, 'o CPF'], [p.docNumero, 'o número do documento'],
+    [p.docOrgao, 'o órgão expedidor (ex: SSP/RS)'], [p.docExpedicao, 'a data de expedição do documento'],
+    [p.email, 'o e-mail'], [p.telefone, 'o telefone'], [p.endereco, 'o endereço'],
+    [p.bairro, 'o bairro'], [p.cidade, 'a cidade'], [p.uf, 'a UF'], [p.cep, 'o CEP'],
+  ]
+  for (const [v, nome] of obrig) if (!v.trim()) e.push(`${rot}: informe ${nome}.`)
+  if (p.cpf.trim() && !cpfValido(p.cpf)) e.push(`${rot}: CPF inválido (confira os dígitos).`)
   const dp = docProblema(p.docTipo, p.docNumero)
   if (dp) e.push(`${rot}: ${dp}.`)
-  if (cpfDocIguais(p)) e.push(`${rot}: CPF e documento (RG/CNH) não podem ser o mesmo número.`)
+  if (cpfDocIguais(p)) e.push(`${rot}: CPF e documento não podem ser o mesmo número.`)
   if (p.email.trim() && !emailValido(p.email)) e.push(`${rot}: e-mail com formato inválido.`)
   if (p.nascimento.trim() && !dataBRValida(p.nascimento)) e.push(`${rot}: nascimento deve ser DD/MM/AAAA.`)
   if (p.docExpedicao.trim() && !dataBRValida(p.docExpedicao)) e.push(`${rot}: data de expedição deve ser DD/MM/AAAA.`)
@@ -149,10 +155,11 @@ function qualificar(p: Pessoa, temParceiro: boolean): string {
   return partes.join(', ')
 }
 
-function PessoaCampos({ p, on }: { p: Pessoa; on: (patch: Partial<Pessoa>) => void }) {
+function PessoaCampos({ p, on, tentou }: { p: Pessoa; on: (patch: Partial<Pessoa>) => void; tentou: boolean }) {
   const campo = 'w-full bg-[#0d0d0d] border border-[#333] rounded-lg px-3 py-1.5 text-white text-sm placeholder:text-gray-600 focus:border-[#fe5009] focus:outline-none'
   const label = 'block text-[11px] font-medium text-gray-400 mb-1'
-  const mark = (bad: boolean) => campo + (bad ? ' border-red-500/60' : '') // vermelho só quando preenchido e inválido
+  const mark = (bad: boolean) => campo + (bad ? ' border-red-500/60' : '')
+  const req = (v: string) => tentou && !v.trim() // obrigatório em branco, após tentar gerar
   const [cepMsg, setCepMsg] = useState<'' | 'buscando' | 'erro'>('')
   // Ao completar 8 dígitos, busca cidade/UF/bairro no ViaCEP e preenche.
   const onCep = async (v: string) => {
@@ -165,17 +172,17 @@ function PessoaCampos({ p, on }: { p: Pessoa; on: (patch: Partial<Pessoa>) => vo
   }
   return (
     <div className="space-y-3">
-      <div><label className={label}>Nome completo</label><input className={campo} value={p.nome} onChange={(e) => on({ nome: e.target.value })} /></div>
+      <div><label className={label}>Nome completo</label><input className={mark(req(p.nome))} value={p.nome} onChange={(e) => on({ nome: e.target.value })} /></div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div><label className={label}>Nacionalidade</label><input className={campo} value={p.nacionalidade} onChange={(e) => on({ nacionalidade: e.target.value })} placeholder="brasileira" /></div>
-        <div><label className={label}>Nascimento</label><input className={mark(!!p.nascimento.trim() && !dataBRValida(p.nascimento))} value={p.nascimento} onChange={(e) => on({ nascimento: e.target.value })} placeholder="07/11/1999" /></div>
+        <div><label className={label}>Nacionalidade</label><input className={mark(req(p.nacionalidade))} value={p.nacionalidade} onChange={(e) => on({ nacionalidade: e.target.value })} placeholder="brasileira" /></div>
+        <div><label className={label}>Nascimento</label><input className={mark(req(p.nascimento) || (!!p.nascimento.trim() && !dataBRValida(p.nascimento)))} value={p.nascimento} onChange={(e) => on({ nascimento: e.target.value })} placeholder="07/11/1999" /></div>
         <div>
           <label className={label}>Estado civil</label>
           <select className={campo} value={p.estadoCivil} onChange={(e) => on({ estadoCivil: e.target.value })}>
             {ESTADOS_CIVIS.map((ec) => <option key={ec} value={ec}>{ec}</option>)}
           </select>
         </div>
-        <div><label className={label}>Profissão</label><input className={campo} value={p.profissao} onChange={(e) => on({ profissao: e.target.value })} /></div>
+        <div><label className={label}>Profissão</label><input className={mark(req(p.profissao))} value={p.profissao} onChange={(e) => on({ profissao: e.target.value })} /></div>
       </div>
       {p.estadoCivil === 'solteiro(a)' && (
         <label className="flex items-center gap-2 text-xs text-gray-400">
@@ -183,7 +190,7 @@ function PessoaCampos({ p, on }: { p: Pessoa; on: (patch: Partial<Pessoa>) => vo
           Convive em união estável
         </label>
       )}
-      <div><label className={label}>CPF</label><input className={mark(!!p.cpf.trim() && (!cpfValido(p.cpf) || cpfDocIguais(p)))} value={p.cpf} onChange={(e) => on({ cpf: e.target.value })} placeholder="000.000.000-00" /></div>
+      <div><label className={label}>CPF</label><input className={mark(req(p.cpf) || (!!p.cpf.trim() && (!cpfValido(p.cpf) || cpfDocIguais(p))))} value={p.cpf} onChange={(e) => on({ cpf: e.target.value })} placeholder="000.000.000-00" /></div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div>
           <label className={label}>Documento</label>
@@ -191,25 +198,25 @@ function PessoaCampos({ p, on }: { p: Pessoa; on: (patch: Partial<Pessoa>) => vo
             {['RG', 'CNH', 'CTPS', 'Passaporte'].map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
         </div>
-        <div><label className={label}>Número</label><input className={mark(!!p.docNumero.trim() && (!!docProblema(p.docTipo, p.docNumero) || cpfDocIguais(p)))} value={p.docNumero} onChange={(e) => on({ docNumero: e.target.value })} placeholder={p.docTipo === 'CNH' ? '11 dígitos' : ''} /></div>
-        <div><label className={label}>Órgão expedidor</label><input className={campo} value={p.docOrgao} onChange={(e) => on({ docOrgao: e.target.value })} placeholder="DETRAN/RS" /></div>
-        <div><label className={label}>Data de expedição</label><input className={mark(!!p.docExpedicao.trim() && !dataBRValida(p.docExpedicao))} value={p.docExpedicao} onChange={(e) => on({ docExpedicao: e.target.value })} placeholder="07/11/2022" /></div>
+        <div><label className={label}>Número</label><input className={mark(req(p.docNumero) || (!!p.docNumero.trim() && (!!docProblema(p.docTipo, p.docNumero) || cpfDocIguais(p))))} value={p.docNumero} onChange={(e) => on({ docNumero: e.target.value })} placeholder={p.docTipo === 'CNH' ? '11 dígitos' : ''} /></div>
+        <div><label className={label}>Órgão expedidor</label><input className={mark(req(p.docOrgao))} value={p.docOrgao} onChange={(e) => on({ docOrgao: e.target.value })} placeholder="DETRAN/RS" /></div>
+        <div><label className={label}>Data de expedição</label><input className={mark(req(p.docExpedicao) || (!!p.docExpedicao.trim() && !dataBRValida(p.docExpedicao)))} value={p.docExpedicao} onChange={(e) => on({ docExpedicao: e.target.value })} placeholder="07/11/2022" /></div>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <div><label className={label}>E-mail</label><input className={mark(!!p.email.trim() && !emailValido(p.email))} value={p.email} onChange={(e) => on({ email: e.target.value })} /></div>
-        <div><label className={label}>Telefone</label><input className={campo} value={p.telefone} onChange={(e) => on({ telefone: e.target.value })} placeholder="55 99165-2957" /></div>
+        <div><label className={label}>E-mail</label><input className={mark(req(p.email) || (!!p.email.trim() && !emailValido(p.email)))} value={p.email} onChange={(e) => on({ email: e.target.value })} /></div>
+        <div><label className={label}>Telefone</label><input className={mark(req(p.telefone))} value={p.telefone} onChange={(e) => on({ telefone: e.target.value })} placeholder="55 99165-2957" /></div>
       </div>
       <div className="grid grid-cols-[150px_1fr_70px] gap-3">
         <div>
           <label className={label}>CEP{cepMsg === 'buscando' && <span className="text-gray-500"> · buscando…</span>}{cepMsg === 'erro' && <span className="text-yellow-500"> · não encontrado</span>}</label>
-          <input className={mark(!!p.cep.trim() && !cepValido(p.cep))} value={p.cep} onChange={(e) => onCep(e.target.value)} inputMode="numeric" placeholder="00000-000" />
+          <input className={mark(req(p.cep) || (!!p.cep.trim() && !cepValido(p.cep)))} value={p.cep} onChange={(e) => onCep(e.target.value)} inputMode="numeric" placeholder="00000-000" />
         </div>
-        <div><label className={label}>Cidade</label><input className={campo} value={p.cidade} onChange={(e) => on({ cidade: e.target.value })} placeholder="preenche pelo CEP" /></div>
-        <div><label className={label}>UF</label><input className={campo} value={p.uf} onChange={(e) => on({ uf: e.target.value })} maxLength={2} placeholder="RS" /></div>
+        <div><label className={label}>Cidade</label><input className={mark(req(p.cidade))} value={p.cidade} onChange={(e) => on({ cidade: e.target.value })} placeholder="preenche pelo CEP" /></div>
+        <div><label className={label}>UF</label><input className={mark(req(p.uf))} value={p.uf} onChange={(e) => on({ uf: e.target.value })} maxLength={2} placeholder="RS" /></div>
       </div>
       <div className="grid grid-cols-[1fr_150px] gap-3">
-        <div><label className={label}>Endereço (rua, nº, compl.)</label><input className={campo} value={p.endereco} onChange={(e) => on({ endereco: e.target.value })} /></div>
-        <div><label className={label}>Bairro</label><input className={campo} value={p.bairro} onChange={(e) => on({ bairro: e.target.value })} /></div>
+        <div><label className={label}>Endereço (rua, nº, compl.)</label><input className={mark(req(p.endereco))} value={p.endereco} onChange={(e) => on({ endereco: e.target.value })} /></div>
+        <div><label className={label}>Bairro</label><input className={mark(req(p.bairro))} value={p.bairro} onChange={(e) => on({ bairro: e.target.value })} /></div>
       </div>
     </div>
   )
@@ -244,6 +251,7 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
   const [erro, setErro] = useState<string | null>(null)
   const [res, setRes] = useState<Resposta | null>(null)
   const [linkDoc, setLinkDoc] = useState<string | null>(null)
+  const [tentou, setTentou] = useState(false) // já tentou pré-visualizar/gerar? (marca obrigatórios vazios)
 
   function montarBody(gerar: boolean): Record<string, unknown> {
     const body: Record<string, unknown> = {
@@ -298,7 +306,7 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
   }
 
   async function preVisualizar() {
-    setErro(null); setRes(null); setLinkDoc(null)
+    setErro(null); setRes(null); setLinkDoc(null); setTentou(true)
     const v = validar()
     if (v) return setErro(v)
     setCarregando(true)
@@ -312,7 +320,7 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
   }
 
   async function gerarDocumento() {
-    setErro(null); setLinkDoc(null)
+    setErro(null); setLinkDoc(null); setTentou(true)
     const v = validar()
     if (v) return setErro(v)
     setGerando(true)
@@ -372,7 +380,7 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
         {/* Compradores — campo a campo (a qualificação é montada automaticamente) */}
         <div className="space-y-3">
           <h3 className={secao}>Comprador 1 {req}</h3>
-          <PessoaCampos p={c1} on={(patch) => setC1((v) => ({ ...v, ...patch }))} />
+          <PessoaCampos p={c1} on={(patch) => setC1((v) => ({ ...v, ...patch }))} tentou={tentou} />
 
           <label className="flex items-center gap-2 text-sm text-gray-300 pt-1">
             <input type="checkbox" checked={temC2} onChange={(e) => setTemC2(e.target.checked)} />
@@ -381,7 +389,7 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
           {temC2 && (
             <div className="space-y-3 pt-1">
               <h3 className={secao}>Comprador 2</h3>
-              <PessoaCampos p={c2} on={(patch) => setC2((v) => ({ ...v, ...patch }))} />
+              <PessoaCampos p={c2} on={(patch) => setC2((v) => ({ ...v, ...patch }))} tentou={tentou} />
             </div>
           )}
         </div>
