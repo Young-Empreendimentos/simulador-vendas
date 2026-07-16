@@ -35,30 +35,44 @@ const maisMesesISO = (n: number) => {
 
 // Qualificação campo a campo (como o bot pedia); o texto do contrato é montado a partir daqui.
 type Pessoa = {
-  nome: string; nacionalidade: string; estadoCivil: string; profissao: string;
-  cpf: string; rg: string; endereco: string; bairro: string; cidade: string; uf: string; cep: string;
-  uniaoEstavel: boolean
+  nome: string; nacionalidade: string; nascimento: string; estadoCivil: string; uniaoEstavel: boolean;
+  profissao: string; cpf: string;
+  docTipo: string; docNumero: string; docOrgao: string; docExpedicao: string;
+  email: string; telefone: string;
+  endereco: string; bairro: string; cidade: string; uf: string; cep: string;
 }
 const pessoaVazia = (): Pessoa => ({
-  nome: '', nacionalidade: 'brasileiro(a)', estadoCivil: 'solteiro(a)', profissao: '',
-  cpf: '', rg: '', endereco: '', bairro: '', cidade: '', uf: '', cep: '', uniaoEstavel: false,
+  nome: '', nacionalidade: 'brasileiro(a)', nascimento: '', estadoCivil: 'solteiro(a)', uniaoEstavel: false,
+  profissao: '', cpf: '', docTipo: 'RG', docNumero: '', docOrgao: '', docExpedicao: '',
+  email: '', telefone: '', endereco: '', bairro: '', cidade: '', uf: '', cep: '',
 })
 const ESTADOS_CIVIS = ['solteiro(a)', 'casado(a)', 'divorciado(a)', 'viúvo(a)', 'convivente em união estável']
 
-// Monta a qualificação de uma pessoa (regra de união estável do bot inclusa).
+// Monta a qualificação na ordem/formato usado pela Young.
 function qualificar(p: Pessoa, temParceiro: boolean): string {
   const ec = p.estadoCivil === 'solteiro(a)' && p.uniaoEstavel ? 'solteiro(a), convivente em união estável' : p.estadoCivil
-  let s = [p.nome.trim().toUpperCase(), p.nacionalidade, ec, p.profissao].filter(Boolean).join(', ')
-  if (p.cpf) s += `, inscrito(a) no CPF sob o nº ${p.cpf}`
-  if (p.rg) s += ` e RG nº ${p.rg}`
-  const local = [p.endereco, p.bairro, p.cidade && p.uf ? `${p.cidade}/${p.uf}` : p.cidade].filter(Boolean).join(', ')
-  if (local) s += `, residente e domiciliado(a) na ${local}`
-  if (p.cep) s += `, CEP ${p.cep}`
-  // solteiro(a) sem união estável e sem 2º comprador → declara que não convive
+  const partes: string[] = []
+  if (p.nome.trim()) partes.push(p.nome.trim())
+  if (p.nacionalidade) partes.push(p.nacionalidade)
+  if (p.nascimento) partes.push(`nascido(a) em ${p.nascimento}`)
+  if (ec) partes.push(ec)
+  // solteiro(a) sem união estável e sem 2º comprador → declaração (logo após o estado civil)
   if (p.estadoCivil === 'solteiro(a)' && !p.uniaoEstavel && !temParceiro) {
-    s += ', que declara para os devidos fins de direito que não convive em união estável com nenhuma pessoa'
+    partes.push('declara para os devidos fins de direito que não convive em união estável com nenhuma pessoa')
   }
-  return s + '.'
+  if (p.profissao) partes.push(p.profissao)
+  if (p.cpf) partes.push(`inscrito(a) no CPF sob nº ${p.cpf}`)
+  if (p.docNumero) {
+    let doc = `${p.docTipo || 'RG'} nº ${p.docNumero}`
+    if (p.docOrgao) doc += `, expedido(a) pelo(a) ${p.docOrgao}${p.docExpedicao ? ` em ${p.docExpedicao}` : ''}`
+    partes.push(doc)
+  }
+  if (p.email) partes.push(`e-mail ${p.email}`)
+  if (p.telefone) partes.push(`telefone ${p.telefone}`)
+  const local = [p.endereco, p.bairro, p.cidade && p.uf ? `${p.cidade}/${p.uf}` : p.cidade].filter(Boolean).join(', ')
+  if (local) partes.push(`residente e domiciliado(a) na ${local}`)
+  if (p.cep) partes.push(`CEP ${p.cep}`)
+  return partes.join(', ')
 }
 
 function PessoaCampos({ p, on }: { p: Pessoa; on: (patch: Partial<Pessoa>) => void }) {
@@ -67,8 +81,9 @@ function PessoaCampos({ p, on }: { p: Pessoa; on: (patch: Partial<Pessoa>) => vo
   return (
     <div className="space-y-3">
       <div><label className={label}>Nome completo</label><input className={campo} value={p.nome} onChange={(e) => on({ nome: e.target.value })} /></div>
-      <div className="grid grid-cols-3 gap-3">
-        <div><label className={label}>Nacionalidade</label><input className={campo} value={p.nacionalidade} onChange={(e) => on({ nacionalidade: e.target.value })} /></div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div><label className={label}>Nacionalidade</label><input className={campo} value={p.nacionalidade} onChange={(e) => on({ nacionalidade: e.target.value })} placeholder="brasileira" /></div>
+        <div><label className={label}>Nascimento</label><input className={campo} value={p.nascimento} onChange={(e) => on({ nascimento: e.target.value })} placeholder="07/11/1999" /></div>
         <div>
           <label className={label}>Estado civil</label>
           <select className={campo} value={p.estadoCivil} onChange={(e) => on({ estadoCivil: e.target.value })}>
@@ -77,9 +92,27 @@ function PessoaCampos({ p, on }: { p: Pessoa; on: (patch: Partial<Pessoa>) => vo
         </div>
         <div><label className={label}>Profissão</label><input className={campo} value={p.profissao} onChange={(e) => on({ profissao: e.target.value })} /></div>
       </div>
+      {p.estadoCivil === 'solteiro(a)' && (
+        <label className="flex items-center gap-2 text-xs text-gray-400">
+          <input type="checkbox" checked={p.uniaoEstavel} onChange={(e) => on({ uniaoEstavel: e.target.checked })} />
+          Convive em união estável
+        </label>
+      )}
+      <div><label className={label}>CPF</label><input className={campo} value={p.cpf} onChange={(e) => on({ cpf: e.target.value })} placeholder="000.000.000-00" /></div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div>
+          <label className={label}>Documento</label>
+          <select className={campo} value={p.docTipo} onChange={(e) => on({ docTipo: e.target.value })}>
+            {['RG', 'CNH', 'RG/CNH', 'CTPS', 'Passaporte'].map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <div><label className={label}>Número</label><input className={campo} value={p.docNumero} onChange={(e) => on({ docNumero: e.target.value })} /></div>
+        <div><label className={label}>Órgão expedidor</label><input className={campo} value={p.docOrgao} onChange={(e) => on({ docOrgao: e.target.value })} placeholder="DETRAN/RS" /></div>
+        <div><label className={label}>Data de expedição</label><input className={campo} value={p.docExpedicao} onChange={(e) => on({ docExpedicao: e.target.value })} placeholder="07/11/2022" /></div>
+      </div>
       <div className="grid grid-cols-2 gap-3">
-        <div><label className={label}>CPF</label><input className={campo} value={p.cpf} onChange={(e) => on({ cpf: e.target.value })} placeholder="000.000.000-00" /></div>
-        <div><label className={label}>RG / Identidade</label><input className={campo} value={p.rg} onChange={(e) => on({ rg: e.target.value })} /></div>
+        <div><label className={label}>E-mail</label><input className={campo} value={p.email} onChange={(e) => on({ email: e.target.value })} /></div>
+        <div><label className={label}>Telefone</label><input className={campo} value={p.telefone} onChange={(e) => on({ telefone: e.target.value })} placeholder="55 99165-2957" /></div>
       </div>
       <div className="grid grid-cols-[1fr_150px] gap-3">
         <div><label className={label}>Endereço (rua, nº, compl.)</label><input className={campo} value={p.endereco} onChange={(e) => on({ endereco: e.target.value })} /></div>
@@ -90,12 +123,6 @@ function PessoaCampos({ p, on }: { p: Pessoa; on: (patch: Partial<Pessoa>) => vo
         <div><label className={label}>UF</label><input className={campo} value={p.uf} onChange={(e) => on({ uf: e.target.value })} maxLength={2} placeholder="RS" /></div>
         <div><label className={label}>CEP</label><input className={campo} value={p.cep} onChange={(e) => on({ cep: e.target.value })} /></div>
       </div>
-      {p.estadoCivil === 'solteiro(a)' && (
-        <label className="flex items-center gap-2 text-xs text-gray-400">
-          <input type="checkbox" checked={p.uniaoEstavel} onChange={(e) => on({ uniaoEstavel: e.target.checked })} />
-          Convive em união estável
-        </label>
-      )}
     </div>
   )
 }
