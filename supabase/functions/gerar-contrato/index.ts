@@ -310,12 +310,20 @@ Deno.serve(async (req: Request) => {
       const usuario = String(perfil.nome || user.email || "").replace(/[^A-Za-z0-9]/g, "");
       const empClean = empreendimento_input.replace(/[^A-Za-z0-9]/g, "");
       const nomeArquivo = `contratobot_${empClean}_${usuario}_${p2(dt.getDate())}${p2(dt.getMonth() + 1)}${dt.getFullYear()}_${num_lote}_${p2(dt.getHours())}${p2(dt.getMinutes())}${p2(dt.getSeconds())}`;
+      // (1) COPIAR o template (sem pasta) — isola acesso ao TEMPLATE + APIs
       const copyR = await fetch(`https://www.googleapis.com/drive/v3/files/${template_id}/copy?supportsAllDrives=true`, {
         method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ name: nomeArquivo, parents: [PASTA_ID] }),
+        body: JSON.stringify({ name: nomeArquivo }),
       });
       const copy = await copyR.json();
-      if (!copy.id) return j({ erro: "DRIVE_COPY", mensagem: "Falha ao copiar o template no Drive. Confira se a conta de serviço tem acesso ao template e à pasta.", detalhe: JSON.stringify(copy).slice(0, 300) }, 502);
+      if (!copy.id) return j({ erro: "COPY_TEMPLATE", etapa: "1-copiar-template", mensagem: "Falhou ao COPIAR o template. Causa: a conta de serviço não tem acesso ao Doc do template, OU as APIs (Drive/Docs) não estão ativadas no projeto da conta.", detalhe: JSON.stringify(copy).slice(0, 400) }, 502);
+      // (2) MOVER a cópia para a pasta de destino — isola o Editor na PASTA
+      const mvR = await fetch(`https://www.googleapis.com/drive/v3/files/${copy.id}?addParents=${PASTA_ID}&supportsAllDrives=true`, {
+        method: "PATCH", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const mv = await mvR.json();
+      if (mv.error) return j({ erro: "MOVE_PASTA", etapa: "2-mover-pasta", mensagem: "O template FOI copiado, mas falhou ao mover para a pasta de destino. Causa: a conta de serviço precisa de EDITOR na pasta.", detalhe: JSON.stringify(mv.error).slice(0, 400), documento_id: copy.id, link: `https://docs.google.com/document/d/${copy.id}/edit` }, 502);
       const buR = await fetch(`https://docs.googleapis.com/v1/documents/${copy.id}:batchUpdate`, {
         method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({ requests }),
