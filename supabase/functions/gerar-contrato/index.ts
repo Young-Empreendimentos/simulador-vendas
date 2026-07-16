@@ -80,11 +80,13 @@ async function importPrivateKey(pem: string): Promise<CryptoKey> {
   const der = Uint8Array.from(atob(clean), (c) => c.charCodeAt(0));
   return await crypto.subtle.importKey("pkcs8", der, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"]);
 }
-async function googleToken(saJson: string): Promise<string> {
+async function googleToken(saJson: string, sub?: string): Promise<string> {
   const sa = JSON.parse(saJson);
   const now = Math.floor(Date.now() / 1000);
   const enc = (o: unknown) => b64url(new TextEncoder().encode(JSON.stringify(o)));
-  const unsigned = `${enc({ alg: "RS256", typ: "JWT" })}.${enc({ iss: sa.client_email, scope: "https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/documents", aud: "https://oauth2.googleapis.com/token", iat: now, exp: now + 3600 })}`;
+  const claims: Record<string, unknown> = { iss: sa.client_email, scope: "https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/documents", aud: "https://oauth2.googleapis.com/token", iat: now, exp: now + 3600 };
+  if (sub) claims.sub = sub; // impersonar um usuário real (delegação em todo o domínio)
+  const unsigned = `${enc({ alg: "RS256", typ: "JWT" })}.${enc(claims)}`;
   const key = await importPrivateKey(sa.private_key);
   const sig = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, new TextEncoder().encode(unsigned));
   const assertion = `${unsigned}.${b64url(new Uint8Array(sig))}`;
@@ -305,26 +307,22 @@ Deno.serve(async (req: Request) => {
     if (!saJson) return j({ erro: "GOOGLE_NAO_CONFIGURADO", mensagem: "Falta cadastrar o segredo GOOGLE_SERVICE_ACCOUNT no Supabase (Edge Functions → Secrets)." }, 501);
     try {
       let saEmail = ""; try { saEmail = JSON.parse(saJson).client_email || ""; } catch { /* */ }
-      const token = await googleToken(saJson);
+      const impersonar = Deno.env.get("CONTRATO_IMPERSONAR") || "";
+      const token = await googleToken(saJson, impersonar || undefined);
       const dt = new Date();
       const p2 = (n: number) => String(n).padStart(2, "0");
       const usuario = String(perfil.nome || user.email || "").replace(/[^A-Za-z0-9]/g, "");
       const empClean = empreendimento_input.replace(/[^A-Za-z0-9]/g, "");
       const nomeArquivo = `contratobot_${empClean}_${usuario}_${p2(dt.getDate())}${p2(dt.getMonth() + 1)}${dt.getFullYear()}_${num_lote}_${p2(dt.getHours())}${p2(dt.getMinutes())}${p2(dt.getSeconds())}`;
-      // (1) COPIAR o template (sem pasta) — isola acesso ao TEMPLATE + APIs
+      // Copia direto na pasta de destino (como o n8n). Funciona se a pasta for um
+      // Drive compartilhado (não conta na cota da conta de serviço) OU se estivermos
+      // impersonando um usuário real (CONTRATO_IMPERSONAR).
       const copyR = await fetch(`https://www.googleapis.com/drive/v3/files/${template_id}/copy?supportsAllDrives=true`, {
         method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ name: nomeArquivo }),
+        body: JSON.stringify({ name: nomeArquivo, parents: [PASTA_ID] }),
       });
       const copy = await copyR.json();
-      if (!copy.id) { console.error("COPY_TEMPLATE", saEmail, template_id, JSON.stringify(copy)); return j({ erro: "COPY_TEMPLATE", etapa: "1-copiar-template", conta_servico: saEmail, template_id, mensagem: `Falhou ao COPIAR o template. Conta usada: ${saEmail || "?"} · Template: ${template_id} · Google respondeu: ${JSON.stringify(copy?.error ?? copy).slice(0, 250)}`, detalhe: JSON.stringify(copy).slice(0, 400) }, 502); }
-      // (2) MOVER a cópia para a pasta de destino — isola o Editor na PASTA
-      const mvR = await fetch(`https://www.googleapis.com/drive/v3/files/${copy.id}?addParents=${PASTA_ID}&supportsAllDrives=true`, {
-        method: "PATCH", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
-      const mv = await mvR.json();
-      if (mv.error) { console.error("MOVE_PASTA", saEmail, JSON.stringify(mv.error)); return j({ erro: "MOVE_PASTA", etapa: "2-mover-pasta", conta_servico: saEmail, mensagem: `O template FOI copiado, mas falhou ao mover para a pasta ${PASTA_ID}. Conta: ${saEmail || "?"} precisa de EDITOR na pasta. Google: ${JSON.stringify(mv.error).slice(0, 200)}`, detalhe: JSON.stringify(mv.error).slice(0, 400), documento_id: copy.id, link: `https://docs.google.com/document/d/${copy.id}/edit` }, 502); }
+      if (!copy.id) { console.error("DRIVE_COPY", saEmail, template_id, PASTA_ID, JSON.stringify(copy)); return j({ erro: "DRIVE_COPY", conta_servico: saEmail, template_id, pasta: PASTA_ID, impersonando: impersonar || null, mensagem: `Falha ao gerar. Conta: ${saEmail || "?"}${impersonar ? " (impersonando " + impersonar + ")" : ""} · Template: ${template_id} · Pasta: ${PASTA_ID} · Google: ${JSON.stringify(copy?.error ?? copy).slice(0, 250)}`, detalhe: JSON.stringify(copy).slice(0, 400) }, 502); }
       const buR = await fetch(`https://docs.googleapis.com/v1/documents/${copy.id}:batchUpdate`, {
         method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({ requests }),
