@@ -42,7 +42,7 @@ type Pessoa = {
   endereco: string; bairro: string; cidade: string; uf: string; cep: string;
 }
 const pessoaVazia = (): Pessoa => ({
-  nome: '', nacionalidade: 'brasileiro(a)', nascimento: '', estadoCivil: 'solteiro(a)', uniaoEstavel: false,
+  nome: '', nacionalidade: '', nascimento: '', estadoCivil: 'solteiro(a)', uniaoEstavel: false,
   profissao: '', cpf: '', docTipo: 'RG', docNumero: '', docOrgao: '', docExpedicao: '',
   email: '', telefone: '', endereco: '', bairro: '', cidade: '', uf: '', cep: '',
 })
