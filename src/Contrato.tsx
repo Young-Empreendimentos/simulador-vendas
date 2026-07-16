@@ -76,7 +76,6 @@ function docProblema(tipo: string, num: string): string | null {
   const d = soNum(num), t = (tipo || '').toUpperCase()
   if (t === 'CNH') return d.length === 11 ? null : 'a CNH deve ter 11 dígitos'
   if (t === 'RG') return (d.length >= 5 && d.length <= 12) ? null : 'o RG deve ter entre 5 e 12 dígitos'
-  if (t === 'RG/CNH') return (d.length === 11 || (d.length >= 5 && d.length <= 12)) ? null : 'documento com número inválido'
   return num.trim().replace(/[^A-Za-z0-9]/g, '').length >= 5 ? null : 'número de documento muito curto'
 }
 // Busca cidade/UF/bairro pelo CEP (ViaCEP — API pública, sem credencial).
@@ -175,7 +174,7 @@ function PessoaCampos({ p, on }: { p: Pessoa; on: (patch: Partial<Pessoa>) => vo
         <div>
           <label className={label}>Documento</label>
           <select className={campo} value={p.docTipo} onChange={(e) => on({ docTipo: e.target.value })}>
-            {['RG', 'CNH', 'RG/CNH', 'CTPS', 'Passaporte'].map((t) => <option key={t} value={t}>{t}</option>)}
+            {['RG', 'CNH', 'CTPS', 'Passaporte'].map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
         </div>
         <div><label className={label}>Número</label><input className={mark(!!p.docNumero.trim() && (!!docProblema(p.docTipo, p.docNumero) || cpfDocIguais(p)))} value={p.docNumero} onChange={(e) => on({ docNumero: e.target.value })} placeholder={p.docTipo === 'CNH' ? '11 dígitos' : ''} /></div>
