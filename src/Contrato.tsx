@@ -33,6 +33,73 @@ const maisMesesISO = (n: number) => {
   return `${b.getFullYear()}-${String(b.getMonth() + 1).padStart(2, '0')}-${String(b.getDate()).padStart(2, '0')}`
 }
 
+// Qualificação campo a campo (como o bot pedia); o texto do contrato é montado a partir daqui.
+type Pessoa = {
+  nome: string; nacionalidade: string; estadoCivil: string; profissao: string;
+  cpf: string; rg: string; endereco: string; bairro: string; cidade: string; uf: string; cep: string;
+  uniaoEstavel: boolean
+}
+const pessoaVazia = (): Pessoa => ({
+  nome: '', nacionalidade: 'brasileiro(a)', estadoCivil: 'solteiro(a)', profissao: '',
+  cpf: '', rg: '', endereco: '', bairro: '', cidade: '', uf: '', cep: '', uniaoEstavel: false,
+})
+const ESTADOS_CIVIS = ['solteiro(a)', 'casado(a)', 'divorciado(a)', 'viúvo(a)', 'convivente em união estável']
+
+// Monta a qualificação de uma pessoa (regra de união estável do bot inclusa).
+function qualificar(p: Pessoa, temParceiro: boolean): string {
+  const ec = p.estadoCivil === 'solteiro(a)' && p.uniaoEstavel ? 'solteiro(a), convivente em união estável' : p.estadoCivil
+  let s = [p.nome.trim().toUpperCase(), p.nacionalidade, ec, p.profissao].filter(Boolean).join(', ')
+  if (p.cpf) s += `, inscrito(a) no CPF sob o nº ${p.cpf}`
+  if (p.rg) s += ` e RG nº ${p.rg}`
+  const local = [p.endereco, p.bairro, p.cidade && p.uf ? `${p.cidade}/${p.uf}` : p.cidade].filter(Boolean).join(', ')
+  if (local) s += `, residente e domiciliado(a) na ${local}`
+  if (p.cep) s += `, CEP ${p.cep}`
+  // solteiro(a) sem união estável e sem 2º comprador → declara que não convive
+  if (p.estadoCivil === 'solteiro(a)' && !p.uniaoEstavel && !temParceiro) {
+    s += ', que declara para os devidos fins de direito que não convive em união estável com nenhuma pessoa'
+  }
+  return s + '.'
+}
+
+function PessoaCampos({ p, on }: { p: Pessoa; on: (patch: Partial<Pessoa>) => void }) {
+  const campo = 'w-full bg-[#0d0d0d] border border-[#333] rounded-lg px-3 py-1.5 text-white text-sm placeholder:text-gray-600 focus:border-[#fe5009] focus:outline-none'
+  const label = 'block text-[11px] font-medium text-gray-400 mb-1'
+  return (
+    <div className="space-y-3">
+      <div><label className={label}>Nome completo</label><input className={campo} value={p.nome} onChange={(e) => on({ nome: e.target.value })} /></div>
+      <div className="grid grid-cols-3 gap-3">
+        <div><label className={label}>Nacionalidade</label><input className={campo} value={p.nacionalidade} onChange={(e) => on({ nacionalidade: e.target.value })} /></div>
+        <div>
+          <label className={label}>Estado civil</label>
+          <select className={campo} value={p.estadoCivil} onChange={(e) => on({ estadoCivil: e.target.value })}>
+            {ESTADOS_CIVIS.map((ec) => <option key={ec} value={ec}>{ec}</option>)}
+          </select>
+        </div>
+        <div><label className={label}>Profissão</label><input className={campo} value={p.profissao} onChange={(e) => on({ profissao: e.target.value })} /></div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div><label className={label}>CPF</label><input className={campo} value={p.cpf} onChange={(e) => on({ cpf: e.target.value })} placeholder="000.000.000-00" /></div>
+        <div><label className={label}>RG / Identidade</label><input className={campo} value={p.rg} onChange={(e) => on({ rg: e.target.value })} /></div>
+      </div>
+      <div className="grid grid-cols-[1fr_150px] gap-3">
+        <div><label className={label}>Endereço (rua, nº, compl.)</label><input className={campo} value={p.endereco} onChange={(e) => on({ endereco: e.target.value })} /></div>
+        <div><label className={label}>Bairro</label><input className={campo} value={p.bairro} onChange={(e) => on({ bairro: e.target.value })} /></div>
+      </div>
+      <div className="grid grid-cols-[1fr_70px_130px] gap-3">
+        <div><label className={label}>Cidade</label><input className={campo} value={p.cidade} onChange={(e) => on({ cidade: e.target.value })} /></div>
+        <div><label className={label}>UF</label><input className={campo} value={p.uf} onChange={(e) => on({ uf: e.target.value })} maxLength={2} placeholder="RS" /></div>
+        <div><label className={label}>CEP</label><input className={campo} value={p.cep} onChange={(e) => on({ cep: e.target.value })} /></div>
+      </div>
+      {p.estadoCivil === 'solteiro(a)' && (
+        <label className="flex items-center gap-2 text-xs text-gray-400">
+          <input type="checkbox" checked={p.uniaoEstavel} onChange={(e) => on({ uniaoEstavel: e.target.checked })} />
+          Convive em união estável
+        </label>
+      )}
+    </div>
+  )
+}
+
 type Campos = Record<string, string>
 type Resposta = {
   campos: Campos
@@ -48,9 +115,9 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
   const { perfil } = useAuth()
 
   const [tipo, setTipo] = useState<'aprazo' | 'avista'>('aprazo')
-  const [comprador1, setComprador1] = useState('')
-  const [comprador2, setComprador2] = useState('')
-  const [qualificacao, setQualificacao] = useState('')
+  const [c1, setC1] = useState<Pessoa>(pessoaVazia)
+  const [temC2, setTemC2] = useState(false)
+  const [c2, setC2] = useState<Pessoa>(pessoaVazia)
   const [dataEntrada, setDataEntrada] = useState(hojeISO())
   const [dataPrimVenc, setDataPrimVenc] = useState(maisMesesISO(1))
   const [temCorretor, setTemCorretor] = useState(false)
@@ -77,9 +144,9 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
       reforcos: sim.reforcos.map((r) => ({ valor: Number(r.valor), data_str: r.data_str })),
       data_entrada: brDate(dataEntrada),
       data_primeiro_vencimento: brDate(dataPrimVenc),
-      Qualificacao_Clientes: qualificacao,
-      Comprador1: comprador1,
-      Comprador2: comprador2,
+      Qualificacao_Clientes: temC2 ? `${qualificar(c1, true)}\n${qualificar(c2, true)}` : qualificar(c1, false),
+      Comprador1: c1.nome.trim(),
+      Comprador2: temC2 ? c2.nome.trim() : '',
       tem_corretor: temCorretor,
       gerar,
     }
@@ -104,7 +171,7 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
 
   async function preVisualizar() {
     setErro(null); setRes(null); setLinkDoc(null)
-    if (!comprador1.trim()) return setErro('Informe o Comprador 1.')
+    if (!c1.nome.trim()) return setErro('Informe o nome do Comprador 1.')
     if (temCorretor && !corretorBusca.trim()) return setErro('Informe o CPF/CNPJ ou nome do corretor.')
     setCarregando(true)
     try {
@@ -172,17 +239,21 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
           </div>
         </div>
 
-        {/* Compradores */}
+        {/* Compradores — campo a campo (a qualificação é montada automaticamente) */}
         <div className="space-y-3">
-          <h3 className={secao}>Compradores</h3>
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className={label}>Comprador 1 {req}</label><input className={campo} value={comprador1} onChange={(e) => setComprador1(e.target.value)} /></div>
-            <div><label className={label}>Comprador 2 (opcional)</label><input className={campo} value={comprador2} onChange={(e) => setComprador2(e.target.value)} /></div>
-          </div>
-          <div>
-            <label className={label}>Qualificação dos clientes {req} <span className="text-gray-600">(entra no contrato)</span></label>
-            <textarea className={campo + ' min-h-[70px]'} value={qualificacao} onChange={(e) => setQualificacao(e.target.value)} placeholder="nome, nacionalidade, estado civil, CPF, endereço…" />
-          </div>
+          <h3 className={secao}>Comprador 1 {req}</h3>
+          <PessoaCampos p={c1} on={(patch) => setC1((v) => ({ ...v, ...patch }))} />
+
+          <label className="flex items-center gap-2 text-sm text-gray-300 pt-1">
+            <input type="checkbox" checked={temC2} onChange={(e) => setTemC2(e.target.checked)} />
+            Adicionar comprador 2
+          </label>
+          {temC2 && (
+            <div className="space-y-3 pt-1">
+              <h3 className={secao}>Comprador 2</h3>
+              <PessoaCampos p={c2} on={(patch) => setC2((v) => ({ ...v, ...patch }))} />
+            </div>
+          )}
         </div>
 
         {/* Pagamento */}
@@ -248,6 +319,7 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
             {/* Cláusulas montadas */}
             <h3 className={secao}>Prévia das cláusulas</h3>
             {([
+              ['Qualificação dos clientes (montada)', res.campos.Qualificacao_Clientes],
               ['3. Valor do Imóvel', res.campos.Valor_Imovel],
               ['4. Forma de Pagamento', res.campos.Forma_de_Pagamento],
               ['11. Honorários', res.campos.Honorarios],
