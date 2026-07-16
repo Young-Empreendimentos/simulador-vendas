@@ -70,12 +70,35 @@ function dataBRValida(s: string): boolean {
   return y >= 1900 && dt.getFullYear() === y && dt.getMonth() === mo - 1 && dt.getDate() === d
 }
 const cepValido = (s: string) => soNum(s).length === 8
+// Documento: valida a quantidade de dígitos conforme o tipo escolhido.
+function docProblema(tipo: string, num: string): string | null {
+  if (!num.trim()) return null
+  const d = soNum(num), t = (tipo || '').toUpperCase()
+  if (t === 'CNH') return d.length === 11 ? null : 'a CNH deve ter 11 dígitos'
+  if (t === 'RG') return (d.length >= 5 && d.length <= 12) ? null : 'o RG deve ter entre 5 e 12 dígitos'
+  if (t === 'RG/CNH') return (d.length === 11 || (d.length >= 5 && d.length <= 12)) ? null : 'documento com número inválido'
+  return num.trim().replace(/[^A-Za-z0-9]/g, '').length >= 5 ? null : 'número de documento muito curto'
+}
+// Busca cidade/UF/bairro pelo CEP (ViaCEP — API pública, sem credencial).
+async function buscarCep(cep: string): Promise<{ cidade: string; uf: string; bairro: string } | null> {
+  const c = soNum(cep)
+  if (c.length !== 8) return null
+  try {
+    const r = await fetch(`https://viacep.com.br/ws/${c}/json/`)
+    if (!r.ok) return null
+    const j = await r.json()
+    if (j.erro) return null
+    return { cidade: j.localidade || '', uf: j.uf || '', bairro: j.bairro || '' }
+  } catch { return null }
+}
 // Problemas que impedem gerar o contrato (nome e CPF obrigatórios; formatos se preenchidos).
 function problemasPessoa(p: Pessoa, rot: string): string[] {
   const e: string[] = []
   if (!p.nome.trim()) e.push(`${rot}: informe o nome completo.`)
   if (!p.cpf.trim()) e.push(`${rot}: informe o CPF.`)
   else if (!cpfValido(p.cpf)) e.push(`${rot}: CPF inválido (confira os dígitos).`)
+  const dp = docProblema(p.docTipo, p.docNumero)
+  if (dp) e.push(`${rot}: ${dp}.`)
   if (p.email.trim() && !emailValido(p.email)) e.push(`${rot}: e-mail com formato inválido.`)
   if (p.nascimento.trim() && !dataBRValida(p.nascimento)) e.push(`${rot}: nascimento deve ser DD/MM/AAAA.`)
   if (p.docExpedicao.trim() && !dataBRValida(p.docExpedicao)) e.push(`${rot}: data de expedição deve ser DD/MM/AAAA.`)
@@ -114,6 +137,16 @@ function PessoaCampos({ p, on }: { p: Pessoa; on: (patch: Partial<Pessoa>) => vo
   const campo = 'w-full bg-[#0d0d0d] border border-[#333] rounded-lg px-3 py-1.5 text-white text-sm placeholder:text-gray-600 focus:border-[#fe5009] focus:outline-none'
   const label = 'block text-[11px] font-medium text-gray-400 mb-1'
   const mark = (bad: boolean) => campo + (bad ? ' border-red-500/60' : '') // vermelho só quando preenchido e inválido
+  const [cepMsg, setCepMsg] = useState<'' | 'buscando' | 'erro'>('')
+  // Ao completar 8 dígitos, busca cidade/UF/bairro no ViaCEP e preenche.
+  const onCep = async (v: string) => {
+    on({ cep: v })
+    if (soNum(v).length !== 8) { setCepMsg(''); return }
+    setCepMsg('buscando')
+    const r = await buscarCep(v)
+    if (r) { on({ cidade: r.cidade, uf: r.uf, ...(r.bairro ? { bairro: r.bairro } : {}) }); setCepMsg('') }
+    else setCepMsg('erro')
+  }
   return (
     <div className="space-y-3">
       <div><label className={label}>Nome completo</label><input className={campo} value={p.nome} onChange={(e) => on({ nome: e.target.value })} /></div>
@@ -142,7 +175,7 @@ function PessoaCampos({ p, on }: { p: Pessoa; on: (patch: Partial<Pessoa>) => vo
             {['RG', 'CNH', 'RG/CNH', 'CTPS', 'Passaporte'].map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
         </div>
-        <div><label className={label}>Número</label><input className={campo} value={p.docNumero} onChange={(e) => on({ docNumero: e.target.value })} /></div>
+        <div><label className={label}>Número</label><input className={mark(!!p.docNumero.trim() && !!docProblema(p.docTipo, p.docNumero))} value={p.docNumero} onChange={(e) => on({ docNumero: e.target.value })} placeholder={p.docTipo === 'CNH' ? '11 dígitos' : ''} /></div>
         <div><label className={label}>Órgão expedidor</label><input className={campo} value={p.docOrgao} onChange={(e) => on({ docOrgao: e.target.value })} placeholder="DETRAN/RS" /></div>
         <div><label className={label}>Data de expedição</label><input className={mark(!!p.docExpedicao.trim() && !dataBRValida(p.docExpedicao))} value={p.docExpedicao} onChange={(e) => on({ docExpedicao: e.target.value })} placeholder="07/11/2022" /></div>
       </div>
@@ -150,14 +183,17 @@ function PessoaCampos({ p, on }: { p: Pessoa; on: (patch: Partial<Pessoa>) => vo
         <div><label className={label}>E-mail</label><input className={mark(!!p.email.trim() && !emailValido(p.email))} value={p.email} onChange={(e) => on({ email: e.target.value })} /></div>
         <div><label className={label}>Telefone</label><input className={campo} value={p.telefone} onChange={(e) => on({ telefone: e.target.value })} placeholder="55 99165-2957" /></div>
       </div>
+      <div className="grid grid-cols-[150px_1fr_70px] gap-3">
+        <div>
+          <label className={label}>CEP{cepMsg === 'buscando' && <span className="text-gray-500"> · buscando…</span>}{cepMsg === 'erro' && <span className="text-yellow-500"> · não encontrado</span>}</label>
+          <input className={mark(!!p.cep.trim() && !cepValido(p.cep))} value={p.cep} onChange={(e) => onCep(e.target.value)} inputMode="numeric" placeholder="00000-000" />
+        </div>
+        <div><label className={label}>Cidade</label><input className={campo} value={p.cidade} onChange={(e) => on({ cidade: e.target.value })} placeholder="preenche pelo CEP" /></div>
+        <div><label className={label}>UF</label><input className={campo} value={p.uf} onChange={(e) => on({ uf: e.target.value })} maxLength={2} placeholder="RS" /></div>
+      </div>
       <div className="grid grid-cols-[1fr_150px] gap-3">
         <div><label className={label}>Endereço (rua, nº, compl.)</label><input className={campo} value={p.endereco} onChange={(e) => on({ endereco: e.target.value })} /></div>
         <div><label className={label}>Bairro</label><input className={campo} value={p.bairro} onChange={(e) => on({ bairro: e.target.value })} /></div>
-      </div>
-      <div className="grid grid-cols-[1fr_70px_130px] gap-3">
-        <div><label className={label}>Cidade</label><input className={campo} value={p.cidade} onChange={(e) => on({ cidade: e.target.value })} /></div>
-        <div><label className={label}>UF</label><input className={campo} value={p.uf} onChange={(e) => on({ uf: e.target.value })} maxLength={2} placeholder="RS" /></div>
-        <div><label className={label}>CEP</label><input className={mark(!!p.cep.trim() && !cepValido(p.cep))} value={p.cep} onChange={(e) => on({ cep: e.target.value })} /></div>
       </div>
     </div>
   )
