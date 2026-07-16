@@ -6,7 +6,7 @@ import Contrato from './Contrato'
 // Nomes exatos como estão em comercial_tabela_precos (a função normaliza no servidor).
 const EMPREENDIMENTOS = [
   'Algarve', 'Aurora', 'Erico Verissimo', 'Ilha dos Açores',
-  'Montecarlo', 'Morada da Coxilha', 'Parque Lorena 2', 'Parque Lorena Itaqui',
+  'Montecarlo', 'Morada da Coxilha', 'Parque Lorena 2',
 ]
 
 // Reforços por DATA (como o bot): o financiamento começa HOJE; o "mês" do reforço
