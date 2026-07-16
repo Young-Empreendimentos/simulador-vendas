@@ -48,6 +48,41 @@ const pessoaVazia = (): Pessoa => ({
 })
 const ESTADOS_CIVIS = ['solteiro(a)', 'casado(a)', 'divorciado(a)', 'viúvo(a)', 'convivente em união estável']
 
+// ── Validação dos dados que entram no contrato ──
+const soNum = (s: string) => (s || '').replace(/\D/g, '')
+function cpfValido(s: string): boolean {
+  const c = soNum(s)
+  if (c.length !== 11 || /^(\d)\1{10}$/.test(c)) return false
+  const dig = (base: string, pesoIni: number) => {
+    let soma = 0
+    for (let i = 0; i < base.length; i++) soma += Number(base[i]) * (pesoIni - i)
+    const r = (soma * 10) % 11
+    return r === 10 ? 0 : r
+  }
+  return dig(c.slice(0, 9), 10) === Number(c[9]) && dig(c.slice(0, 10), 11) === Number(c[10])
+}
+const emailValido = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((s || '').trim())
+function dataBRValida(s: string): boolean {
+  const m = (s || '').trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  if (!m) return false
+  const d = Number(m[1]), mo = Number(m[2]), y = Number(m[3])
+  const dt = new Date(y, mo - 1, d)
+  return y >= 1900 && dt.getFullYear() === y && dt.getMonth() === mo - 1 && dt.getDate() === d
+}
+const cepValido = (s: string) => soNum(s).length === 8
+// Problemas que impedem gerar o contrato (nome e CPF obrigatórios; formatos se preenchidos).
+function problemasPessoa(p: Pessoa, rot: string): string[] {
+  const e: string[] = []
+  if (!p.nome.trim()) e.push(`${rot}: informe o nome completo.`)
+  if (!p.cpf.trim()) e.push(`${rot}: informe o CPF.`)
+  else if (!cpfValido(p.cpf)) e.push(`${rot}: CPF inválido (confira os dígitos).`)
+  if (p.email.trim() && !emailValido(p.email)) e.push(`${rot}: e-mail com formato inválido.`)
+  if (p.nascimento.trim() && !dataBRValida(p.nascimento)) e.push(`${rot}: nascimento deve ser DD/MM/AAAA.`)
+  if (p.docExpedicao.trim() && !dataBRValida(p.docExpedicao)) e.push(`${rot}: data de expedição deve ser DD/MM/AAAA.`)
+  if (p.cep.trim() && !cepValido(p.cep)) e.push(`${rot}: CEP deve ter 8 dígitos.`)
+  return e
+}
+
 // Monta a qualificação na ordem/formato usado pela Young.
 function qualificar(p: Pessoa, temParceiro: boolean): string {
   const ec = p.estadoCivil === 'solteiro(a)' && p.uniaoEstavel ? 'solteiro(a), convivente em união estável' : p.estadoCivil
@@ -78,12 +113,13 @@ function qualificar(p: Pessoa, temParceiro: boolean): string {
 function PessoaCampos({ p, on }: { p: Pessoa; on: (patch: Partial<Pessoa>) => void }) {
   const campo = 'w-full bg-[#0d0d0d] border border-[#333] rounded-lg px-3 py-1.5 text-white text-sm placeholder:text-gray-600 focus:border-[#fe5009] focus:outline-none'
   const label = 'block text-[11px] font-medium text-gray-400 mb-1'
+  const mark = (bad: boolean) => campo + (bad ? ' border-red-500/60' : '') // vermelho só quando preenchido e inválido
   return (
     <div className="space-y-3">
       <div><label className={label}>Nome completo</label><input className={campo} value={p.nome} onChange={(e) => on({ nome: e.target.value })} /></div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div><label className={label}>Nacionalidade</label><input className={campo} value={p.nacionalidade} onChange={(e) => on({ nacionalidade: e.target.value })} placeholder="brasileira" /></div>
-        <div><label className={label}>Nascimento</label><input className={campo} value={p.nascimento} onChange={(e) => on({ nascimento: e.target.value })} placeholder="07/11/1999" /></div>
+        <div><label className={label}>Nascimento</label><input className={mark(!!p.nascimento.trim() && !dataBRValida(p.nascimento))} value={p.nascimento} onChange={(e) => on({ nascimento: e.target.value })} placeholder="07/11/1999" /></div>
         <div>
           <label className={label}>Estado civil</label>
           <select className={campo} value={p.estadoCivil} onChange={(e) => on({ estadoCivil: e.target.value })}>
@@ -98,7 +134,7 @@ function PessoaCampos({ p, on }: { p: Pessoa; on: (patch: Partial<Pessoa>) => vo
           Convive em união estável
         </label>
       )}
-      <div><label className={label}>CPF</label><input className={campo} value={p.cpf} onChange={(e) => on({ cpf: e.target.value })} placeholder="000.000.000-00" /></div>
+      <div><label className={label}>CPF</label><input className={mark(!!p.cpf.trim() && !cpfValido(p.cpf))} value={p.cpf} onChange={(e) => on({ cpf: e.target.value })} placeholder="000.000.000-00" /></div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div>
           <label className={label}>Documento</label>
@@ -108,10 +144,10 @@ function PessoaCampos({ p, on }: { p: Pessoa; on: (patch: Partial<Pessoa>) => vo
         </div>
         <div><label className={label}>Número</label><input className={campo} value={p.docNumero} onChange={(e) => on({ docNumero: e.target.value })} /></div>
         <div><label className={label}>Órgão expedidor</label><input className={campo} value={p.docOrgao} onChange={(e) => on({ docOrgao: e.target.value })} placeholder="DETRAN/RS" /></div>
-        <div><label className={label}>Data de expedição</label><input className={campo} value={p.docExpedicao} onChange={(e) => on({ docExpedicao: e.target.value })} placeholder="07/11/2022" /></div>
+        <div><label className={label}>Data de expedição</label><input className={mark(!!p.docExpedicao.trim() && !dataBRValida(p.docExpedicao))} value={p.docExpedicao} onChange={(e) => on({ docExpedicao: e.target.value })} placeholder="07/11/2022" /></div>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <div><label className={label}>E-mail</label><input className={campo} value={p.email} onChange={(e) => on({ email: e.target.value })} /></div>
+        <div><label className={label}>E-mail</label><input className={mark(!!p.email.trim() && !emailValido(p.email))} value={p.email} onChange={(e) => on({ email: e.target.value })} /></div>
         <div><label className={label}>Telefone</label><input className={campo} value={p.telefone} onChange={(e) => on({ telefone: e.target.value })} placeholder="55 99165-2957" /></div>
       </div>
       <div className="grid grid-cols-[1fr_150px] gap-3">
@@ -121,7 +157,7 @@ function PessoaCampos({ p, on }: { p: Pessoa; on: (patch: Partial<Pessoa>) => vo
       <div className="grid grid-cols-[1fr_70px_130px] gap-3">
         <div><label className={label}>Cidade</label><input className={campo} value={p.cidade} onChange={(e) => on({ cidade: e.target.value })} /></div>
         <div><label className={label}>UF</label><input className={campo} value={p.uf} onChange={(e) => on({ uf: e.target.value })} maxLength={2} placeholder="RS" /></div>
-        <div><label className={label}>CEP</label><input className={campo} value={p.cep} onChange={(e) => on({ cep: e.target.value })} /></div>
+        <div><label className={label}>CEP</label><input className={mark(!!p.cep.trim() && !cepValido(p.cep))} value={p.cep} onChange={(e) => on({ cep: e.target.value })} /></div>
       </div>
     </div>
   )
@@ -196,10 +232,20 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
     return data
   }
 
+  // Junta os problemas dos compradores (+ corretor) antes de tocar no contrato.
+  function validar(): string | null {
+    const probs = [
+      ...problemasPessoa(c1, 'Comprador 1'),
+      ...(temC2 ? problemasPessoa(c2, 'Comprador 2') : []),
+    ]
+    if (temCorretor && !corretorBusca.trim()) probs.push('Informe o CPF/CNPJ ou nome do corretor.')
+    return probs.length ? probs.join('\n') : null
+  }
+
   async function preVisualizar() {
     setErro(null); setRes(null); setLinkDoc(null)
-    if (!c1.nome.trim()) return setErro('Informe o nome do Comprador 1.')
-    if (temCorretor && !corretorBusca.trim()) return setErro('Informe o CPF/CNPJ ou nome do corretor.')
+    const v = validar()
+    if (v) return setErro(v)
     setCarregando(true)
     try {
       setRes(await chamar(false) as Resposta)
@@ -212,6 +258,8 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
 
   async function gerarDocumento() {
     setErro(null); setLinkDoc(null)
+    const v = validar()
+    if (v) return setErro(v)
     setGerando(true)
     try {
       const data = await chamar(true)
