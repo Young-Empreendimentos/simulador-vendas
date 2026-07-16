@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { supabase } from './lib/supabase'
 import { useAuth } from './auth'
 import Contrato from './Contrato'
@@ -11,9 +11,8 @@ const EMPREENDIMENTOS = [
 
 // Reforços por DATA (como o bot): o financiamento começa HOJE; o "mês" do reforço
 // é a diferença em meses entre a data informada e hoje. Datas ISO (yyyy-mm-dd).
-type Regra =
-  | { id: string; tipo: 'avulso'; data: string; valor: number }
-  | { id: string; tipo: 'recorrente'; freq: number; valor: number; dataInicio: string; ate: 'fim' | string }
+// Lista editável (cada linha = uma data + valor), no mesmo espírito das parcelas.
+type Reforco = { id: string; data: string; valor: number }
 
 // pt-BR: aceita "5.000", "5000", "5.000,50"
 const parseBRL = (s: string) => {
@@ -29,9 +28,6 @@ function limiteReforco(emp: string) {
   if (e.includes('morada da coxilha')) return 360
   return 180
 }
-const rotuloFreq = (f: number) =>
-  f === 3 ? 'trimestral' : f === 6 ? 'semestral' : f === 12 ? 'anual' : `a cada ${f} meses`
-
 // ── datas ──
 const isoParaBR = (iso: string) => {
   if (!iso) return ''
@@ -45,53 +41,38 @@ function mesesDeHoje(iso: string): number {
   const hoje = new Date()
   return (y - hoje.getFullYear()) * 12 + (m - 1 - hoje.getMonth())
 }
+const isoDe = (base: Date) =>
+  `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, '0')}-${String(base.getDate()).padStart(2, '0')}`
+// soma meses SEM estourar o dia: 31/jan + 1 mês = 28/fev (e não 03/mar), pra não
+// pular/duplicar meses quando a frequência é curta e a data cai em fim de mês.
+function somaMeses(y: number, mIndex0: number, dia: number, n: number): Date {
+  const alvo = new Date(y, mIndex0 + n, 1)
+  const ultimoDia = new Date(alvo.getFullYear(), alvo.getMonth() + 1, 0).getDate()
+  alvo.setDate(Math.min(dia, ultimoDia))
+  return alvo
+}
 function addMesesISO(iso: string, n: number): string {
   if (!iso) return ''
   const [y, m, d] = iso.split('-').map(Number)
-  const base = new Date(y, m - 1 + n, d)
-  return `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, '0')}-${String(base.getDate()).padStart(2, '0')}`
+  return isoDe(somaMeses(y, m - 1, d, n))
 }
 function hojeMaisMesesISO(n: number): string {
   const d = new Date()
-  const base = new Date(d.getFullYear(), d.getMonth() + n, d.getDate())
-  return `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, '0')}-${String(base.getDate()).padStart(2, '0')}`
+  return isoDe(somaMeses(d.getFullYear(), d.getMonth(), d.getDate(), n))
 }
 
-// Expande as regras -> lista {mes,valor,data_str}[], merge por mês, clamp (mes>=1, <=teto).
-function expandir(regras: Regra[], teto: number): { mes: number; valor: number; data_str: string }[] {
-  const mapa = new Map<number, { valor: number; data_str: string }>()
-  const add = (iso: string, valor: number) => {
-    const mes = mesesDeHoje(iso)
-    if (!(mes >= 1) || mes > teto || !(valor > 0)) return
-    const prev = mapa.get(mes)
-    mapa.set(mes, { valor: (prev?.valor || 0) + valor, data_str: isoParaBR(iso) })
-  }
-  for (const r of regras) {
-    if (r.tipo === 'avulso') add(r.data, r.valor)
-    else {
-      if (r.freq <= 0 || !r.dataInicio) continue
-      for (let k = 0; k < 600; k++) {
-        const iso = addMesesISO(r.dataInicio, k * r.freq)
-        if (mesesDeHoje(iso) > teto) break
-        if (r.ate !== 'fim' && iso > r.ate) break
-        add(iso, r.valor)
-      }
-    }
-  }
-  return [...mapa.entries()].sort((a, b) => a[0] - b[0]).map(([mes, v]) => ({ mes, valor: v.valor, data_str: v.data_str }))
-}
-function contaRegra(r: Regra, teto: number): number {
-  if (r.tipo === 'avulso') { const m = mesesDeHoje(r.data); return m >= 1 && m <= teto ? 1 : 0 }
-  if (r.freq <= 0 || !r.dataInicio) return 0
-  let c = 0
+// Série recorrente: a partir de inicioISO, a cada `freq` meses, enquanto o mês
+// (em relação a hoje) for >= 1 e <= ateMes (padrão: a última parcela).
+function serieDatas(inicioISO: string, freq: number, ateMes: number): string[] {
+  const out: string[] = []
+  if (!inicioISO || freq <= 0 || ateMes < 1) return out
   for (let k = 0; k < 600; k++) {
-    const iso = addMesesISO(r.dataInicio, k * r.freq)
-    const mes = mesesDeHoje(iso)
-    if (mes > teto) break
-    if (r.ate !== 'fim' && iso > r.ate) break
-    if (mes >= 1) c++
+    const iso = addMesesISO(inicioISO, k * freq)
+    const m = mesesDeHoje(iso)
+    if (m > ateMes) break
+    if (m >= 1) out.push(iso)
   }
-  return c
+  return out
 }
 
 type Resumo = {
@@ -211,7 +192,7 @@ function CardSimulacao({ r, onGerarContrato }: { r: Resultado; onGerarContrato: 
           <p className="text-xs text-gray-400 mb-1">Reforços</p>
           <ul className="text-sm text-gray-300 space-y-0.5">
             {r.reforcos.map((x, i) => (
-              <li key={i}>Mês {x.mes}: {brl(Number(x.valor))}</li>
+              <li key={i}>{x.data_str || `Mês ${x.mes}`}: {brl(Number(x.valor))}</li>
             ))}
           </ul>
         </div>
@@ -273,17 +254,13 @@ export default function Simulador() {
   const [numLote, setNumLote] = useState(inicial.lote)
   const [entrada, setEntrada] = useState('')
   const [prazo, setPrazo] = useState('')
-  const [regras, setRegras] = useState<Regra[]>([])
-  const [modo, setModo] = useState<'recorrente' | 'avulso'>('recorrente')
-  const [fValor, setFValor] = useState('')
-  const [fFreq, setFFreq] = useState('12')
-  const [fFreqN, setFFreqN] = useState('')
-  const [fDataInicio, setFDataInicio] = useState('')
-  const [fAte, setFAte] = useState<'fim' | 'data'>('fim')
-  const [fAteData, setFAteData] = useState('')
-  const [fData, setFData] = useState('')
+  const [reforcos, setReforcos] = useState<Reforco[]>([])
+  const [reforcosManual, setReforcosManual] = useState(false) // usuário editou a lista à mão?
+  const [gValor, setGValor] = useState('')                    // gerador: valor de cada reforço
+  const [gFreq, setGFreq] = useState('12')                    // '12'|'6'|'3'|'custom'
+  const [gFreqN, setGFreqN] = useState('')                    // "a cada N meses"
+  const [gData, setGData] = useState('')                      // 1ª data (opcional)
   const [reforcosAberto, setReforcosAberto] = useState(false)
-  const valorRef = useRef<HTMLInputElement>(null)
   const [promocional, setPromocional] = useState(false)
   const [precoCustomizado, setPrecoCustomizado] = useState(false)
   const [valorCustom, setValorCustom] = useState('')
@@ -299,13 +276,24 @@ export default function Simulador() {
   const ehMontecarlo = empreendimento.toLowerCase() === 'montecarlo'
   const podeAutonomia = !!perfil?.pode_autonomia && ehMontecarlo
 
-  // Reforços: regras -> lista achatada (fonte única p/ régua, resumo e payload)
+  // Reforços: a lista editável é a fonte única (resumo + payload).
   const prazoN = Number(prazo) || 0
   const LIMITE = limiteReforco(empreendimento)
-  const teto = prazoN ? Math.min(prazoN + 6, LIMITE) : LIMITE
-  const listaReforcos = useMemo(() => expandir(regras, teto), [regras, teto])
+  const teto = prazoN ? Math.min(prazoN + 6, LIMITE) : LIMITE // limite p/ QUALQUER reforço (até 6 meses após o fim)
+  const fimContrato = Math.min(prazoN, teto)                  // auto-geração para na última parcela (0 se sem prazo)
+  const gFreqMeses = gFreq === 'custom' ? (Number(gFreqN) || 0) : Number(gFreq)
+  // mapeia a lista editável -> payload {mes,valor,data_str}, só linhas válidas, ordenado
+  const listaReforcos = useMemo(
+    () => reforcos
+      .map((x) => ({ id: x.id, mes: mesesDeHoje(x.data), valor: x.valor, data_str: isoParaBR(x.data) }))
+      .filter((x) => !!x.data_str && x.valor > 0 && x.mes >= 1 && x.mes <= teto)
+      .sort((a, b) => a.mes - b.mes),
+    [reforcos, teto],
+  )
   const qtd = listaReforcos.length
   const totalReforcos = listaReforcos.reduce((s, x) => s + x.valor, 0)
+  // linhas com data preenchida que NÃO entram no cálculo (fora do prazo ou sem valor)
+  const excluidas = reforcos.filter((x) => !!x.data && !(mesesDeHoje(x.data) >= 1 && mesesDeHoje(x.data) <= teto && x.valor > 0)).length
 
   // Se trocar de empreendimento e perder o direito, zera a autonomia.
   useEffect(() => {
@@ -315,35 +303,33 @@ export default function Simulador() {
     }
   }, [podeAutonomia, precoCustomizado])
 
-  function addRegra() {
-    const valor = parseBRL(fValor)
-    if (valor <= 0) return
-    const id = crypto.randomUUID()
-    if (modo === 'avulso') {
-      if (!fData || mesesDeHoje(fData) < 1) return
-      setRegras((r) => [...r, { id, tipo: 'avulso', data: fData, valor }])
-    } else {
-      const freq = fFreq === 'custom' ? Number(fFreqN) || 0 : Number(fFreq)
-      if (freq <= 0 || !fDataInicio) return
-      const ate: 'fim' | string = fAte === 'fim' ? 'fim' : fAteData || 'fim'
-      setRegras((r) => [...r, { id, tipo: 'recorrente', freq, valor, dataInicio: fDataInicio, ate }])
-    }
-    setFValor('')
-    setFData('')
+  // Auto-geração: enquanto o usuário não editar à mão, a lista segue o gerador + prazo,
+  // preenchendo automaticamente até a última parcela.
+  useEffect(() => {
+    if (reforcosManual) return
+    const valor = parseBRL(gValor)
+    if (valor <= 0 || gFreqMeses <= 0 || fimContrato < 1) { setReforcos([]); return }
+    const inicio = gData || hojeMaisMesesISO(gFreqMeses) // 1ª data padrão = hoje + frequência
+    const itens = serieDatas(inicio, gFreqMeses, fimContrato).map((data, i) => ({ id: `auto-${i}`, data, valor }))
+    setReforcos(itens)
+  }, [gValor, gFreqMeses, gData, fimContrato, reforcosManual])
+
+  function editReforco(id: string, patch: Partial<Reforco>) {
+    setReforcosManual(true)
+    setReforcos((rs) => rs.map((x) => (x.id === id ? { ...x, ...patch } : x)))
   }
-  function delRegra(id: string) {
-    setRegras((r) => r.filter((x) => x.id !== id))
+  function addReforco() {
+    setReforcosManual(true)
+    const ultima = reforcos.length ? reforcos[reforcos.length - 1].data : ''
+    const prox = ultima ? addMesesISO(ultima, gFreqMeses > 0 ? gFreqMeses : 1) : (gData || hojeMaisMesesISO(1))
+    setReforcos((rs) => [...rs, { id: crypto.randomUUID(), data: prox, valor: parseBRL(gValor) || 0 }])
   }
-  function preset(kind: 'anual' | 'semestral' | 'unico') {
-    if (kind === 'unico') setModo('avulso')
-    else {
-      const freq = kind === 'anual' ? 12 : 6
-      setModo('recorrente')
-      setFFreq(String(freq))
-      setFDataInicio(hojeMaisMesesISO(freq)) // 1ª data padrão = hoje + frequência
-      setFAte('fim')
-    }
-    requestAnimationFrame(() => valorRef.current?.focus())
+  function delReforco(id: string) {
+    setReforcosManual(true)
+    setReforcos((rs) => rs.filter((x) => x.id !== id))
+  }
+  function regerar() {
+    setReforcosManual(false) // volta a seguir o gerador; o efeito refaz a lista
   }
 
   async function simular(confirmarFlag = false, semPromo = false) {
@@ -365,7 +351,7 @@ export default function Simulador() {
     if (precoCustomizado) body.valor_lote = Number(valorCustom) || 0
     if (perfil?.pode_bonificar) body.bonus = Number(bonus) || 0
     body.prazo_meses = Number(prazo) || 0
-    body.reforcos = listaReforcos
+    body.reforcos = listaReforcos.map(({ mes, valor, data_str }) => ({ mes, valor, data_str }))
 
     setCarregando(true)
     try {
@@ -470,95 +456,85 @@ export default function Simulador() {
         {/* painel de reforços (full width quando aberto) */}
         {reforcosAberto && (
           <div className="border-t border-[#262626] pt-3 space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-gray-500 mr-1">Atalhos:</span>
-              {([['anual', 'Anual'], ['semestral', 'Semestral'], ['unico', 'Só um reforço']] as const).map(([k, t]) => (
-                <button key={k} type="button" onClick={() => preset(k)} className="px-3 py-1 rounded-full border border-[#333] bg-[#0d0d0d] text-xs text-gray-300 hover:border-[#fe5009] hover:text-white transition">{t}</button>
-              ))}
-              <span className="text-[11px] text-gray-600">Datas futuras — o financiamento começa hoje.</span>
-            </div>
-
-            {prazoN > 0 ? (
-              <div className="rounded-lg bg-[#0d0d0d] border border-[#262626] px-3 pt-4 pb-2">
-                <div className="relative h-8">
-                  <div className="absolute inset-x-0 top-3 h-[3px] bg-[#262626] rounded-full" />
-                  {Array.from({ length: Math.floor(prazoN / 12) }, (_, i) => (i + 1) * 12).map((a) => (
-                    <div key={a} className="absolute top-1 w-px h-4 bg-[#333]" style={{ left: `${(a / prazoN) * 100}%` }} />
-                  ))}
-                  {listaReforcos.map((x) => (
-                    <div key={x.mes} title={`${x.data_str} · ${brl(x.valor)}`} className="absolute top-3 -translate-x-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-[#fe5009] ring-2 ring-[#0d0d0d]" style={{ left: `${Math.min(x.mes / prazoN, 1) * 100}%` }} />
-                  ))}
-                </div>
-                <div className="flex justify-between text-[10px] text-gray-600 mt-1"><span>mês 1</span><span>{prazoN} meses</span></div>
-              </div>
+            {prazoN < 1 ? (
+              <p className="text-xs text-gray-500">Defina o <span className="text-gray-300">prazo</span> para gerar os reforços.</p>
             ) : (
-              <p className="text-xs text-gray-600">Defina o prazo para posicionar os reforços na linha do tempo.</p>
-            )}
-
-            {regras.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {regras.map((r) => (
-                  <span key={r.id} className="inline-flex items-center gap-2 bg-[#1a1a1a] border border-[#333] rounded-full pl-3 pr-2 py-1 text-xs text-gray-200">
-                    {r.tipo === 'avulso'
-                      ? `${brl(r.valor)} · ${isoParaBR(r.data)}`
-                      : `${brl(r.valor)} · ${rotuloFreq(r.freq)} · a partir de ${isoParaBR(r.dataInicio)} ${r.ate === 'fim' ? 'até o fim' : 'até ' + isoParaBR(r.ate)} (${contaRegra(r, teto)}x)`}
-                    <button type="button" aria-label="Remover reforço" onClick={() => delRegra(r.id)} className="text-gray-500 hover:text-red-400">✕</button>
-                  </span>
-                ))}
-              </div>
-            )}
-
-            {/* mini-form horizontal */}
-            <div className="flex flex-wrap items-end gap-3 rounded-lg bg-[#0d0d0d] border border-[#262626] p-3">
-              <div className="w-40">
-                <label className={label}>Tipo</label>
-                <div className="grid grid-cols-2 gap-1 bg-[#141414] p-1 rounded-lg">
-                  {(['recorrente', 'avulso'] as const).map((m) => (
-                    <button key={m} type="button" onClick={() => setModo(m)} className={`text-xs py-1 rounded-md transition ${modo === m ? 'bg-[#fe5009] text-white' : 'text-gray-400 hover:text-white'}`}>{m === 'recorrente' ? 'Repetir' : 'Uma vez'}</button>
-                  ))}
-                </div>
-              </div>
-              <div className="w-32">
-                <label className={label}>Valor (R$)</label>
-                <input ref={valorRef} className={campo} type="text" inputMode="numeric" value={fValor} onChange={(e) => setFValor(e.target.value)} placeholder="ex: 5.000" />
-              </div>
-              {modo === 'avulso' ? (
-                <div className="w-40">
-                  <label className={label}>Data</label>
-                  <input className={campo} type="date" value={fData} onChange={(e) => setFData(e.target.value)} />
-                </div>
-              ) : (
-                <>
+              <>
+                {/* Gerador: valor + frequência (+ 1ª data). Preenche a lista até a última parcela. */}
+                <div className="flex flex-wrap items-end gap-3">
+                  <div className="w-32">
+                    <label className={label}>Valor de cada</label>
+                    <input className={campo} type="text" inputMode="numeric" value={gValor} onChange={(e) => setGValor(e.target.value)} placeholder="ex: 5.000" />
+                  </div>
                   <div className="w-36">
                     <label className={label}>Frequência</label>
-                    <select className={campo} value={fFreq} onChange={(e) => setFFreq(e.target.value)}>
+                    <select className={campo} value={gFreq} onChange={(e) => setGFreq(e.target.value)}>
                       <option value="12">Anual</option>
                       <option value="6">Semestral</option>
                       <option value="3">Trimestral</option>
+                      <option value="1">Mensal</option>
                       <option value="custom">A cada N meses…</option>
                     </select>
                   </div>
-                  {fFreq === 'custom' && (
-                    <div className="w-28">
+                  {gFreq === 'custom' && (
+                    <div className="w-24">
                       <label className={label}>A cada (meses)</label>
-                      <input className={campo} type="number" value={fFreqN} onChange={(e) => setFFreqN(e.target.value)} placeholder="ex: 4" />
+                      <input className={campo} type="number" value={gFreqN} onChange={(e) => setGFreqN(e.target.value)} placeholder="ex: 4" />
                     </div>
                   )}
                   <div className="w-40">
-                    <label className={label}>Primeira data</label>
-                    <input className={campo} type="date" value={fDataInicio} onChange={(e) => setFDataInicio(e.target.value)} />
+                    <label className={label}>1ª data <span className="text-gray-600">(opcional)</span></label>
+                    <input className={campo} type="date" value={gData} onChange={(e) => setGData(e.target.value)} />
                   </div>
-                  <div className="w-56">
-                    <label className={label}>Repetir até</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button type="button" onClick={() => setFAte('fim')} className={`${campo} text-left ${fAte === 'fim' ? 'border-[#fe5009] text-white' : 'text-gray-400'}`}>o fim</button>
-                      <input className={campo} type="date" value={fAteData} onFocus={() => setFAte('data')} onChange={(e) => { setFAte('data'); setFAteData(e.target.value) }} />
+                  {reforcosManual && parseBRL(gValor) > 0 && gFreqMeses > 0 && (
+                    <button type="button" onClick={regerar} className="self-end text-xs text-gray-400 hover:text-[#fe5009] underline underline-offset-2 pb-1.5 whitespace-nowrap" title="Descarta as edições e regenera a série a partir do valor e da frequência acima">↺ Regerar até o fim</button>
+                  )}
+                </div>
+
+                <p className="text-[11px] text-gray-600">
+                  Preenchido automaticamente até a <span className="text-gray-400">última parcela (mês {prazoN})</span>. Edite as datas e os valores como quiser — dá pra marcar até 6 meses depois do fim (mês {teto}).
+                </p>
+
+                {/* Lista editável — no mesmo espírito das parcelas */}
+                {reforcos.length > 0 ? (
+                  <div className="rounded-lg border border-[#262626] overflow-hidden">
+                    <div className="grid grid-cols-[1fr_1fr_auto] gap-px bg-[#262626] text-[10px] text-gray-500 uppercase tracking-wide">
+                      <span className="bg-[#0d0d0d] px-3 py-1.5">Data</span>
+                      <span className="bg-[#0d0d0d] px-3 py-1.5">Valor</span>
+                      <span className="bg-[#0d0d0d] px-3 py-1.5 w-9" />
+                    </div>
+                    <div className="divide-y divide-[#1f1f1f] max-h-52 overflow-y-auto">
+                      {reforcos.map((x) => {
+                        const m = mesesDeHoje(x.data)
+                        const dataFora = !!x.data && (m < 1 || m > teto)
+                        const valorFalta = !!x.data && !(x.valor > 0)
+                        return (
+                          <div key={x.id} className="grid grid-cols-[1fr_1fr_auto] items-center gap-2 px-2 py-1.5">
+                            <input className={campo + (dataFora ? ' border-red-500/60' : '')} type="date" value={x.data} onChange={(e) => editReforco(x.id, { data: e.target.value })} title={dataFora ? `Fora do intervalo permitido (mês 1 a ${teto}).` : ''} />
+                            <input className={campo + (valorFalta ? ' border-red-500/60' : '')} type="number" value={x.valor || ''} onChange={(e) => editReforco(x.id, { valor: Number(e.target.value) || 0 })} placeholder="R$" title={valorFalta ? 'Informe um valor para este reforço entrar no cálculo.' : ''} />
+                            <button type="button" aria-label="Remover reforço" onClick={() => delReforco(x.id)} className="text-gray-600 hover:text-red-400 w-9">✕</button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                    <div className="px-3 py-2 bg-[#0d0d0d] border-t border-[#262626] space-y-1">
+                      <div className="flex items-center justify-between">
+                        <button type="button" onClick={addReforco} className="text-xs text-[#fe5009] hover:text-orange-400 font-medium">+ adicionar reforço</button>
+                        <span className="text-xs text-gray-400">{qtd} {qtd === 1 ? 'reforço' : 'reforços'} · {brl(totalReforcos)}</span>
+                      </div>
+                      {excluidas > 0 && (
+                        <p className="text-[11px] text-yellow-500/80">{excluidas} {excluidas === 1 ? 'linha não entra' : 'linhas não entram'} no cálculo (data fora do prazo ou valor vazio).</p>
+                      )}
                     </div>
                   </div>
-                </>
-              )}
-              <button type="button" onClick={addRegra} disabled={modo === 'recorrente' && fAte === 'fim' && !prazoN} className="bg-[#fe5009] hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg px-4 py-1.5 transition">+ Adicionar</button>
-            </div>
+                ) : (
+                  <div className="flex items-center gap-3">
+                    <p className="text-xs text-gray-600">Informe o valor e a frequência acima para gerar os reforços.</p>
+                    <button type="button" onClick={addReforco} className="text-xs text-[#fe5009] hover:text-orange-400 font-medium whitespace-nowrap">+ adicionar manualmente</button>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
 
