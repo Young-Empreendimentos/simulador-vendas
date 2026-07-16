@@ -27,10 +27,16 @@ const hojeISO = () => {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
-const maisMesesISO = (n: number) => {
-  const d = new Date()
-  const b = new Date(d.getFullYear(), d.getMonth() + n, d.getDate())
-  return `${b.getFullYear()}-${String(b.getMonth() + 1).padStart(2, '0')}-${String(b.getDate()).padStart(2, '0')}`
+const isoDe = (b: Date) => `${b.getFullYear()}-${String(b.getMonth() + 1).padStart(2, '0')}-${String(b.getDate()).padStart(2, '0')}`
+const hojeMaisDiasISO = (n: number) => { const d = new Date(); d.setDate(d.getDate() + n); return isoDe(d) }
+// 1º vencimento (à prazo): o DIA escolhido, no MÊS SEGUINTE à entrada, com clamp p/ o fim do mês (regra do bot).
+function vencimentoISO(entradaISO: string, dia: number): string {
+  if (!entradaISO || !(dia >= 1 && dia <= 31)) return ''
+  const [y, m] = entradaISO.split('-').map(Number)
+  const alvo = new Date(y, m, 1) // m (1-12) usado como índice 0-based => mês seguinte
+  const ultimoDia = new Date(alvo.getFullYear(), alvo.getMonth() + 1, 0).getDate()
+  alvo.setDate(Math.min(dia, ultimoDia))
+  return isoDe(alvo)
 }
 
 // Qualificação campo a campo (como o bot pedia); o texto do contrato é montado a partir daqui.
@@ -46,7 +52,15 @@ const pessoaVazia = (): Pessoa => ({
   profissao: '', cpf: '', docTipo: 'RG', docNumero: '', docOrgao: '', docExpedicao: '',
   email: '', telefone: '', endereco: '', bairro: '', cidade: '', uf: '', cep: '',
 })
-const ESTADOS_CIVIS = ['solteiro(a)', 'casado(a)', 'divorciado(a)', 'viúvo(a)', 'convivente em união estável']
+const ESTADOS_CIVIS = [
+  'solteiro(a)',
+  'casado(a) em regime de comunhão parcial de bens',
+  'casado(a) em regime de comunhão universal de bens',
+  'casado(a) em regime de separação total de bens',
+  'casado(a) em regime de participação final nos aquestos',
+  'divorciado(a)',
+  'viúvo(a)',
+]
 
 // ── Validação dos dados que entram no contrato ──
 const soNum = (s: string) => (s || '').replace(/\D/g, '')
@@ -220,7 +234,7 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
   const [temC2, setTemC2] = useState(false)
   const [c2, setC2] = useState<Pessoa>(pessoaVazia)
   const [dataEntrada, setDataEntrada] = useState(hojeISO())
-  const [dataPrimVenc, setDataPrimVenc] = useState(maisMesesISO(1))
+  const [diaVenc, setDiaVenc] = useState('10') // dia do mês do 1º vencimento (à prazo)
   const [temCorretor, setTemCorretor] = useState(false)
   const [corretorBusca, setCorretorBusca] = useState('')
   const [bonus, setBonus] = useState('')
@@ -244,7 +258,7 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
       cartorio: sim.resumo.cartorio,
       reforcos: sim.reforcos.map((r) => ({ valor: Number(r.valor), data_str: r.data_str })),
       data_entrada: brDate(dataEntrada),
-      data_primeiro_vencimento: brDate(dataPrimVenc),
+      data_primeiro_vencimento: tipo === 'aprazo' ? brDate(vencimentoISO(dataEntrada, Number(diaVenc))) : '',
       Qualificacao_Clientes: temC2 ? `${qualificar(c1, true)}\n${qualificar(c2, true)}` : qualificar(c1, false),
       Comprador1: c1.nome.trim(),
       Comprador2: temC2 ? c2.nome.trim() : '',
@@ -277,6 +291,9 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
       ...(temC2 ? problemasPessoa(c2, 'Comprador 2') : []),
     ]
     if (temCorretor && !corretorBusca.trim()) probs.push('Informe o CPF/CNPJ ou nome do corretor.')
+    if (!dataEntrada) probs.push('Informe a data da entrada.')
+    else if (dataEntrada < hojeISO() || dataEntrada > hojeMaisDiasISO(7)) probs.push('Data da entrada deve ser entre hoje e 7 dias (regra da Young).')
+    if (tipo === 'aprazo' && !(Number(diaVenc) >= 1 && Number(diaVenc) <= 31)) probs.push('Informe o dia do vencimento das parcelas (1 a 31).')
     return probs.length ? probs.join('\n') : null
   }
 
@@ -373,9 +390,16 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
         <div className="space-y-3">
           <h3 className={secao}>Datas de pagamento</h3>
           <div className="grid grid-cols-2 gap-3">
-            <div><label className={label}>Data da entrada</label><input type="date" className={campo} value={dataEntrada} onChange={(e) => setDataEntrada(e.target.value)} /></div>
+            <div>
+              <label className={label}>Data da entrada <span className="text-gray-600">(hoje até +7 dias)</span></label>
+              <input type="date" min={hojeISO()} max={hojeMaisDiasISO(7)} className={campo + (dataEntrada && (dataEntrada < hojeISO() || dataEntrada > hojeMaisDiasISO(7)) ? ' border-red-500/60' : '')} value={dataEntrada} onChange={(e) => setDataEntrada(e.target.value)} />
+            </div>
             {tipo === 'aprazo' && (
-              <div><label className={label}>1º vencimento (parcelas)</label><input type="date" className={campo} value={dataPrimVenc} onChange={(e) => setDataPrimVenc(e.target.value)} /></div>
+              <div>
+                <label className={label}>Dia do 1º vencimento</label>
+                <input type="number" min={1} max={31} className={campo + (!(Number(diaVenc) >= 1 && Number(diaVenc) <= 31) ? ' border-red-500/60' : '')} value={diaVenc} onChange={(e) => setDiaVenc(e.target.value)} placeholder="ex: 10" />
+                {vencimentoISO(dataEntrada, Number(diaVenc)) && <p className="text-[11px] text-gray-500 mt-1">1ª parcela em {brDate(vencimentoISO(dataEntrada, Number(diaVenc)))}</p>}
+              </div>
             )}
           </div>
           {sim.reforcos.length > 0 && (
