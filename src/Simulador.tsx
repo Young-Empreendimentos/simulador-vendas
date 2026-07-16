@@ -135,25 +135,26 @@ function Olho({ aberto }: { aberto: boolean }) {
 // Card de uma simulação (com a comissão escondida atrás do olhinho)
 function CardSimulacao({ r, onGerarContrato }: { r: Resultado; onGerarContrato: () => void }) {
   const [verComissao, setVerComissao] = useState(false)
+  const [verReforcos, setVerReforcos] = useState(false)
+  const temReforcos = r.reforcos.length > 0
   return (
-    <div className="bg-[#141414] border border-[#262626] rounded-xl p-6 space-y-4">
-      <div className="flex items-start justify-between">
+    <div className="bg-[#141414] border border-[#262626] rounded-xl p-5 space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="font-display text-white text-base">{r.empreendimento} · Lote {r.num_lote}</h2>
+        {r.promocional && (
+          <span className="text-[10px] uppercase tracking-wide text-[#00bcbc] border border-[#00bcbc]/40 rounded px-1.5 py-0.5">Promoção</span>
+        )}
+        {r.autonomia_aplicada && (
+          <span className="text-[10px] uppercase tracking-wide text-[#004ebf] border border-[#004ebf]/40 rounded px-1.5 py-0.5">Autonomia</span>
+        )}
+      </div>
+
+      <div className="flex items-end justify-between">
         <div>
-          <h2 className="font-display text-white text-lg">{r.empreendimento} · Lote {r.num_lote}</h2>
-          <div className="flex gap-2 mt-1">
-            {r.promocional && (
-              <span className="text-[10px] uppercase tracking-wide text-[#00bcbc] border border-[#00bcbc]/40 rounded px-1.5 py-0.5">Promoção</span>
-            )}
-            {r.autonomia_aplicada && (
-              <span className="text-[10px] uppercase tracking-wide text-[#004ebf] border border-[#004ebf]/40 rounded px-1.5 py-0.5">Autonomia</span>
-            )}
-          </div>
-        </div>
-        <div className="text-right">
           <p className="text-xs text-gray-500">Parcela mensal</p>
-          <p className="font-display text-2xl text-[#fe5009]">{brl(r.resumo.parcela_mensal)}</p>
-          <p className="text-xs text-gray-500">{r.resumo.prazo_meses}x</p>
+          <p className="font-display text-3xl leading-none text-[#fe5009]">{brl(r.resumo.parcela_mensal)}</p>
         </div>
+        <p className="text-xs text-gray-500">em {r.resumo.prazo_meses}x</p>
       </div>
 
       {!r.disponivel && r.status_lote && (
@@ -162,85 +163,90 @@ function CardSimulacao({ r, onGerarContrato }: { r: Resultado; onGerarContrato: 
         </p>
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-px bg-[#262626] rounded-lg overflow-hidden text-sm">
-        {[
-          ['Valor à vista', brl(r.resumo.valor_lote_av)],
-          ['Entrada', brl(r.resumo.entrada)],
-          ['Parcelas', `${r.resumo.prazo_meses}x de ${brl(r.resumo.parcela_mensal)}`],
-          ...(r.resumo.total_reforcos > 0 ? [['Reforços', brl(r.resumo.total_reforcos)]] : []),
-        ].map(([k, v]) => (
-          <div key={k} className="bg-[#141414] p-3">
-            <p className="text-gray-500 text-xs">{k}</p>
-            <p className="text-white">{v}</p>
+      <div className="border-t border-[#262626] text-sm">
+        <div className="flex items-center justify-between py-2.5 border-b border-[#1e1e1e]">
+          <span className="text-gray-400">Valor à vista</span>
+          <span className="text-gray-100">{brl(r.resumo.valor_lote_av)}</span>
+        </div>
+        <div className="flex items-center justify-between py-2.5 border-b border-[#1e1e1e]">
+          <span className="text-gray-400">Entrada</span>
+          <span className="text-gray-100">{brl(r.resumo.entrada)}</span>
+        </div>
+        {temReforcos && (
+          <div className="border-b border-[#1e1e1e]">
+            <button onClick={() => setVerReforcos((v) => !v)} aria-expanded={verReforcos} className="w-full flex items-center justify-between py-2.5 text-left">
+              <span className="text-gray-400">Reforços</span>
+              <span className="text-gray-100 flex items-center gap-1.5">
+                {r.reforcos.length}× · {brl(r.resumo.total_reforcos)}
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`text-gray-500 transition-transform ${verReforcos ? 'rotate-180' : ''}`}><path d="m6 9 6 6 6-6" /></svg>
+              </span>
+            </button>
+            {verReforcos && (
+              <ul className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[11px] pb-2 max-h-24 overflow-y-auto">
+                {r.reforcos.map((x, i) => (
+                  <li key={i} className="flex items-center justify-between gap-2 tabular-nums whitespace-nowrap">
+                    <span className="text-gray-500">{x.data_str || `Mês ${x.mes}`}</span>
+                    <span className="text-gray-300">{brl(Number(x.valor))}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
-        ))}
-      </div>
-
-      <div className="rounded-lg border border-[#262626] divide-y divide-[#262626] text-sm">
-        <div className="flex items-center justify-between px-3 py-2.5">
-          <span className="text-gray-400">Custos de registro (ITBI + Cartório)</span>
-          <span className="text-white">{brl(r.resumo.itbi + r.resumo.cartorio)}</span>
-        </div>
-        <div className="flex items-center justify-between px-3 py-2.5 bg-[#0d0d0d]">
-          <span className="text-gray-200">Valor total do financiamento</span>
-          <span className="text-white font-display text-base">{brl(r.resumo.total_pago)}</span>
+        )}
+        <div className="flex items-center justify-between py-2.5">
+          <span className="text-gray-400">Custos de registro <span className="text-gray-600">(ITBI + Cartório)</span></span>
+          <span className="text-gray-100">{brl(r.resumo.itbi + r.resumo.cartorio)}</span>
         </div>
       </div>
 
-      {r.reforcos.length > 0 && (
-        <div>
-          <p className="text-xs text-gray-400 mb-1">Reforços</p>
-          <ul className="text-sm text-gray-300 space-y-0.5">
-            {r.reforcos.map((x, i) => (
-              <li key={i}>{x.data_str || `Mês ${x.mes}`}: {brl(Number(x.valor))}</li>
-            ))}
-          </ul>
-        </div>
-      )}
+      <div className="flex items-center justify-between bg-[#0d0d0d] border border-[#262626] rounded-lg px-3 py-2.5">
+        <span className="text-sm text-gray-300">Valor total do financiamento</span>
+        <span className="font-display text-lg text-white">{brl(r.resumo.total_pago)}</span>
+      </div>
 
       {r.promo_descricao && <p className="text-xs text-[#00bcbc]">{r.promo_descricao}</p>}
 
-      {/* Comissão (interna) — escondida atrás do olhinho */}
-      <div className="border-t border-[#262626] pt-3">
-        <button
-          onClick={() => setVerComissao((v) => !v)}
-          title={verComissao ? 'ocultar comissão' : 'ver comissão'}
-          aria-label={verComissao ? 'ocultar comissão' : 'ver comissão'}
-          className="text-gray-400 hover:text-white"
-        >
-          <Olho aberto={verComissao} />
-        </button>
-        {verComissao && (
-          <div className="mt-2 rounded-lg border border-[#333] bg-[#0d0d0d] p-3 text-sm space-y-1">
-            <div className="flex justify-between">
-              <span className="text-gray-400">Comissão (5%)</span>
-              <span className="text-white">{brl(r.interno.comissao)}</span>
-            </div>
-            {r.interno.bonus > 0 && (
-              <div className="flex justify-between">
-                <span className="text-gray-400">Bônus</span>
-                <span className="text-white">{brl(r.interno.bonus)}</span>
-              </div>
-            )}
-            {r.interno.bonus > 0 && (
-              <div className="flex justify-between border-t border-[#262626] mt-1 pt-1">
-                <span className="text-gray-300">Total</span>
-                <span className="text-[#fe5009]">{brl(r.interno.comissao_total)}</span>
-              </div>
-            )}
-            <p className="text-[10px] text-gray-600 pt-1">Informação interna — não faz parte da proposta ao cliente.</p>
+      {/* Comissão (interna) — aparece acima do rodapé quando o olhinho abre */}
+      {verComissao && (
+        <div className="rounded-lg border border-[#333] bg-[#0d0d0d] p-3 text-sm space-y-1">
+          <div className="flex justify-between">
+            <span className="text-gray-400">Comissão (5%)</span>
+            <span className="text-white">{brl(r.interno.comissao)}</span>
           </div>
-        )}
-      </div>
+          {r.interno.bonus > 0 && (
+            <div className="flex justify-between">
+              <span className="text-gray-400">Bônus</span>
+              <span className="text-white">{brl(r.interno.bonus)}</span>
+            </div>
+          )}
+          {r.interno.bonus > 0 && (
+            <div className="flex justify-between border-t border-[#262626] mt-1 pt-1">
+              <span className="text-gray-300">Total</span>
+              <span className="text-[#fe5009]">{brl(r.interno.comissao_total)}</span>
+            </div>
+          )}
+          <p className="text-[10px] text-gray-600 pt-1">Informação interna — não faz parte da proposta ao cliente.</p>
+        </div>
+      )}
 
-      <div className="flex items-center justify-between border-t border-[#262626] pt-3">
-        <p className="text-[11px] text-gray-600">Simulação sem valor contratual — sujeita a conferência.</p>
-        <button
-          onClick={onGerarContrato}
-          className="text-sm text-[#fe5009] hover:text-orange-400 font-medium whitespace-nowrap"
-        >
-          Gerar contrato →
-        </button>
+      <div className="border-t border-[#262626] pt-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <button
+            onClick={() => setVerComissao((v) => !v)}
+            title={verComissao ? 'ocultar comissão' : 'ver comissão'}
+            aria-label={verComissao ? 'ocultar comissão' : 'ver comissão'}
+            className="text-gray-500 hover:text-white"
+          >
+            <Olho aberto={verComissao} />
+          </button>
+          <button
+            onClick={onGerarContrato}
+            className="text-sm text-[#fe5009] hover:text-orange-400 font-medium whitespace-nowrap"
+          >
+            Gerar contrato →
+          </button>
+        </div>
+        <p className="text-[10px] text-gray-600">Simulação sem valor contratual — sujeita a conferência.</p>
       </div>
     </div>
   )
@@ -282,14 +288,18 @@ export default function Simulador() {
   const teto = prazoN ? Math.min(prazoN + 6, LIMITE) : LIMITE // limite p/ QUALQUER reforço (até 6 meses após o fim)
   const fimContrato = Math.min(prazoN, teto)                  // auto-geração para na última parcela (0 se sem prazo)
   const gFreqMeses = gFreq === 'custom' ? (Number(gFreqN) || 0) : Number(gFreq)
-  // mapeia a lista editável -> payload {mes,valor,data_str}, só linhas válidas, ordenado
-  const listaReforcos = useMemo(
-    () => reforcos
-      .map((x) => ({ id: x.id, mes: mesesDeHoje(x.data), valor: x.valor, data_str: isoParaBR(x.data) }))
-      .filter((x) => !!x.data_str && x.valor > 0 && x.mes >= 1 && x.mes <= teto)
-      .sort((a, b) => a.mes - b.mes),
-    [reforcos, teto],
-  )
+  // mapeia a lista editável -> payload {mes,valor,data_str}: só linhas válidas,
+  // SOMANDO reforços que caem no mesmo mês (o backend trata por mês) e ordenado.
+  const listaReforcos = useMemo(() => {
+    const mapa = new Map<number, { mes: number; valor: number; data_str: string }>()
+    for (const x of reforcos) {
+      const mes = mesesDeHoje(x.data)
+      if (!x.data || !(x.valor > 0) || mes < 1 || mes > teto) continue
+      const prev = mapa.get(mes)
+      mapa.set(mes, { mes, valor: (prev?.valor || 0) + x.valor, data_str: prev?.data_str || isoParaBR(x.data) })
+    }
+    return [...mapa.values()].sort((a, b) => a.mes - b.mes)
+  }, [reforcos, teto])
   const qtd = listaReforcos.length
   const totalReforcos = listaReforcos.reduce((s, x) => s + x.valor, 0)
   // linhas com data preenchida que NÃO entram no cálculo (fora do prazo ou sem valor)
