@@ -155,7 +155,7 @@ Deno.serve(async (req: Request) => {
     if (!perfil.pode_autonomia) return j({ erro: "AUTONOMIA_NEGADA_USUARIO", mensagem: "Seu usuário não tem autonomia para preço customizado." }, 403);
     if (alvo !== "montecarlo") return j({ erro: "AUTONOMIA_EMPREENDIMENTO", mensagem: "Autonomia disponível apenas para Montecarlo." });
     if (preco_minimo_db == null || preco_minimo_db <= 0) return j({ erro: "AUTONOMIA_NEGADA_LOTE", mensagem: "Este lote não tem preço mínimo cadastrado." });
-    const valor_custom = parseFloat(String(raw.valor_lote ?? 0));
+    const valor_custom = parseFloat(String(raw.valor_lote || 0));
     if (!(valor_custom > 0)) return j({ erro: "AUTONOMIA_VALOR_INVALIDO", mensagem: "Preço customizado inválido." });
     if (valor_custom < preco_minimo_db) return j({ erro: "AUTONOMIA_ABAIXO_MINIMO", mensagem: `Preço (R$ ${valor_custom.toFixed(2)}) abaixo do mínimo (R$ ${preco_minimo_db.toFixed(2)}).` });
     valor_av = valor_custom;
@@ -166,15 +166,15 @@ Deno.serve(async (req: Request) => {
   }
 
   // 7) Parâmetros (ITBI e cartório derivados no servidor — não confiar do cliente)
-  const entrada = parseFloat(String(raw.entrada ?? 0));
+  const entrada = parseFloat(String(raw.entrada || 0));      // igual ao bot: falsy -> 0
   const itbi_percentual = (alvo === "montecarlo" || alvo === "morada da coxilha") ? 0.03 : 0.02;
   const cartorio = 2500;
   const taxa_juros_mensal = promocional ? 0 : (juros_banco / 100);
   const prazo_maximo_promo = promocional ? prazo_maximo_promo_banco : 0;
 
   const reforcos = Array.isArray(raw.reforcos) ? (raw.reforcos as Array<Record<string, unknown>>) : [];
-  const prazo_meses_informado = parseInt(String(raw.prazo_meses ?? raw.prazo ?? 0));
-  const parcela_desejada = parseFloat(String(raw.parcela_desejada ?? 0));
+  const prazo_meses_informado = parseInt(String(raw.prazo_meses || raw.prazo || 0)); // igual ao bot: 0/"" caem no fallback
+  const parcela_desejada = parseFloat(String(raw.parcela_desejada || 0));
 
   const LIMITE_REFORCO_APOS_PARCELAS = 6;
   const LIMITES: Record<string, number> = { "aurora": 240, "morada da coxilha": 360 };
@@ -183,14 +183,14 @@ Deno.serve(async (req: Request) => {
   for (const chave in LIMITES) { if (emp_norm.includes(chave)) { LIMITE_ABSOLUTO_MESES = LIMITES[chave]; break; } }
 
   if (!(valor_av > 0)) return j({ erro: "VALOR_INVALIDO", mensagem: "Valor do lote inválido." });
-  if (entrada < 500) return j({ erro: "ENTRADA_MINIMA", mensagem: "Entrada mínima é R$ 500,00." });
+  if (!Number.isFinite(entrada) || entrada < 500) return j({ erro: "ENTRADA_MINIMA", mensagem: "Entrada mínima é R$ 500,00." });
   if (entrada > valor_av) return j({ erro: "ENTRADA_ALTA", mensagem: "Entrada não pode ser maior que o valor do lote." });
 
   for (let i = 0; i < reforcos.length; i++) {
-    const mes = parseInt(String(reforcos[i].mes ?? 0));
-    const valor = parseFloat(String(reforcos[i].valor ?? 0));
-    if (valor <= 0) return j({ erro: "REFORCO_VALOR", mensagem: `Reforço ${i + 1} com valor inválido.` });
-    if (mes < 1) return j({ erro: "REFORCO_MES", mensagem: `Reforço ${i + 1}: informe uma data futura (a partir do próximo mês).` });
+    const mes = parseInt(String(reforcos[i].mes || 0));
+    const valor = parseFloat(String(reforcos[i].valor || 0));
+    if (!(valor > 0)) return j({ erro: "REFORCO_VALOR", mensagem: `Reforço ${i + 1} com valor inválido.` });
+    if (!(mes >= 1)) return j({ erro: "REFORCO_MES", mensagem: `Reforço ${i + 1}: informe uma data futura (a partir do próximo mês).` });
     if (mes > LIMITE_ABSOLUTO_MESES) return j({ erro: "REFORCO_PRAZO", mensagem: `Reforço ${i + 1} (mês ${mes}) ultrapassa ${LIMITE_ABSOLUTO_MESES} meses.` });
   }
   if (promocional && prazo_maximo_promo > 0 && prazo_meses_informado > prazo_maximo_promo) {
@@ -201,8 +201,8 @@ Deno.serve(async (req: Request) => {
   let vp_reforcos = 0, total_reforcos_nominal = 0;
   const detalhes_reforcos: Array<{ mes: number; valor: string; data_str: string }> = [];
   for (const ref of reforcos) {
-    const valor = parseFloat(String(ref.valor ?? 0));
-    const mes = parseInt(String(ref.mes ?? 0));
+    const valor = parseFloat(String(ref.valor || 0));
+    const mes = parseInt(String(ref.mes || 0));
     if (valor > 0 && mes > 0) {
       vp_reforcos += valor / Math.pow(1 + taxa_juros_mensal, mes);
       total_reforcos_nominal += valor;
@@ -270,7 +270,7 @@ Deno.serve(async (req: Request) => {
     return j({ erro: "PARAMETROS_INSUFICIENTES", mensagem: "Informe prazo_meses OU parcela_desejada." }, 400);
   }
 
-  const ultimo_reforco_mes = reforcos.length ? Math.max(...reforcos.map((r) => parseInt(String(r.mes ?? 0)))) : 0;
+  const ultimo_reforco_mes = reforcos.length ? Math.max(...reforcos.map((r) => parseInt(String(r.mes || 0)))) : 0;
   if (Math.max(prazo_meses, ultimo_reforco_mes) > LIMITE_ABSOLUTO_MESES) {
     return j({ erro: "PRAZO_TOTAL", mensagem: `O último pagamento ultrapassa ${LIMITE_ABSOLUTO_MESES} meses.` });
   }
@@ -287,7 +287,7 @@ Deno.serve(async (req: Request) => {
   const base_comissao = preco_customizado ? valor_av : preco_av_banco;
   const comissao = base_comissao * 0.05;
   // Bônus (opcional) — só usuário habilitado; teto: comissão + bônus ≤ entrada.
-  const bonus_pedido = parseFloat(String(raw.bonus ?? 0)) || 0;
+  const bonus_pedido = parseFloat(String(raw.bonus || 0)) || 0;
   let bonus = 0;
   if (bonus_pedido > 0) {
     if (!perfil.pode_bonificar) return j({ erro: "BONUS_NEGADO", mensagem: "Seu usuário não pode aplicar bonificação." }, 403);
