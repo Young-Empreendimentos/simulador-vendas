@@ -304,6 +304,7 @@ Deno.serve(async (req: Request) => {
     const saJson = Deno.env.get("GOOGLE_SERVICE_ACCOUNT");
     if (!saJson) return j({ erro: "GOOGLE_NAO_CONFIGURADO", mensagem: "Falta cadastrar o segredo GOOGLE_SERVICE_ACCOUNT no Supabase (Edge Functions → Secrets)." }, 501);
     try {
+      let saEmail = ""; try { saEmail = JSON.parse(saJson).client_email || ""; } catch { /* */ }
       const token = await googleToken(saJson);
       const dt = new Date();
       const p2 = (n: number) => String(n).padStart(2, "0");
@@ -316,14 +317,14 @@ Deno.serve(async (req: Request) => {
         body: JSON.stringify({ name: nomeArquivo }),
       });
       const copy = await copyR.json();
-      if (!copy.id) return j({ erro: "COPY_TEMPLATE", etapa: "1-copiar-template", mensagem: "Falhou ao COPIAR o template. Causa: a conta de serviço não tem acesso ao Doc do template, OU as APIs (Drive/Docs) não estão ativadas no projeto da conta.", detalhe: JSON.stringify(copy).slice(0, 400) }, 502);
+      if (!copy.id) { console.error("COPY_TEMPLATE", saEmail, template_id, JSON.stringify(copy)); return j({ erro: "COPY_TEMPLATE", etapa: "1-copiar-template", conta_servico: saEmail, template_id, mensagem: `Falhou ao COPIAR o template. Conta usada: ${saEmail || "?"} · Template: ${template_id} · Google respondeu: ${JSON.stringify(copy?.error ?? copy).slice(0, 250)}`, detalhe: JSON.stringify(copy).slice(0, 400) }, 502); }
       // (2) MOVER a cópia para a pasta de destino — isola o Editor na PASTA
       const mvR = await fetch(`https://www.googleapis.com/drive/v3/files/${copy.id}?addParents=${PASTA_ID}&supportsAllDrives=true`, {
         method: "PATCH", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
       const mv = await mvR.json();
-      if (mv.error) return j({ erro: "MOVE_PASTA", etapa: "2-mover-pasta", mensagem: "O template FOI copiado, mas falhou ao mover para a pasta de destino. Causa: a conta de serviço precisa de EDITOR na pasta.", detalhe: JSON.stringify(mv.error).slice(0, 400), documento_id: copy.id, link: `https://docs.google.com/document/d/${copy.id}/edit` }, 502);
+      if (mv.error) { console.error("MOVE_PASTA", saEmail, JSON.stringify(mv.error)); return j({ erro: "MOVE_PASTA", etapa: "2-mover-pasta", conta_servico: saEmail, mensagem: `O template FOI copiado, mas falhou ao mover para a pasta ${PASTA_ID}. Conta: ${saEmail || "?"} precisa de EDITOR na pasta. Google: ${JSON.stringify(mv.error).slice(0, 200)}`, detalhe: JSON.stringify(mv.error).slice(0, 400), documento_id: copy.id, link: `https://docs.google.com/document/d/${copy.id}/edit` }, 502); }
       const buR = await fetch(`https://docs.googleapis.com/v1/documents/${copy.id}:batchUpdate`, {
         method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({ requests }),
