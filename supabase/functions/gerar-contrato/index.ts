@@ -18,7 +18,7 @@ const j = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 
 function norm(s: unknown): string {
-  return String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+  return String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 }
 const round2 = (v: unknown) => Math.round(Number(v) * 100) / 100;
 const fmt = (v: unknown) => Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -125,20 +125,20 @@ Deno.serve(async (req: Request) => {
 
   // números financeiros (da simulação)
   const valor_lote_av = round2(raw.valor_lote_av || 0);
-  const entrada_bruta = round2(raw.entrada_bruta ?? raw.entrada ?? 0);
+  const entrada_bruta = round2(raw.entrada_bruta || raw.entrada || 0);
   const parcela = round2(raw.parcela_mensal || 0);
   const prazo = parseInt(String(raw.prazo_meses || 0));
   const itbi = round2(raw.itbi || 0);
-  const cartorio = round2(raw.cartorio ?? raw.cartorio_fixo ?? 0);
+  const cartorio = round2(raw.cartorio || raw.cartorio_fixo || 0);
   const itbi_cartorio = round2(itbi + cartorio);
   const data_entrada = String(raw.data_entrada || "");
   const data_prim_venc = String(raw.data_primeiro_vencimento || "");
   const reforcos = (Array.isArray(raw.reforcos) ? raw.reforcos as Array<Record<string, unknown>> : [])
-    .map((r) => ({ valor: round2(r.valor || 0), data_str: String(r.data_str ?? r.data ?? "") }))
+    .map((r) => ({ valor: round2(r.valor || 0), data_str: String(r.data_str || r.data || "") }))
     .filter((r) => r.valor > 0);
 
   const tem_corretor = !!raw.tem_corretor;
-  const bonus_solicitado = round2(raw.bonus_comissao ?? raw.bonus ?? 0);
+  const bonus_solicitado = round2(raw.bonus_comissao || 0); // como o bot: só bonus_comissao
 
   // 3) Dados cadastrais do lote (matrícula/área/ônus/PROPRIETÁRIO) — comercial_lotes_detalhes
   const { data: dets } = await admin
@@ -175,9 +175,24 @@ Deno.serve(async (req: Request) => {
   const preco_av_tabela = round2(precoRow?.preco_av || 0);
   const preco_minimo_tab = precoRow?.preco_minimo != null ? round2(precoRow.preco_minimo) : null;
   if (!(preco_av_tabela > 0)) return j({ erro: "COMISSAO_FALHA_BUSCA_PRECO", mensagem: "Não foi possível obter o preço à vista de tabela do lote para a base da comissão." }, 502);
-  const { data: promoPrecos } = await admin
-    .from("comercial_promocoes_precos").select("num_lote,empreendimento,preco_promocional").eq("num_lote", num_lote);
-  const promoPrices = (promoPrecos ?? []).filter((p) => norm(p.empreendimento) === alvo).map((p) => round2(p.preco_promocional)).filter((v) => v > 0);
+  // Só promoções ATIVAS e vigentes contam p/ classificar "isPromo" (igual ao SQL do bot)
+  const hojeISO = new Date().toISOString().slice(0, 10);
+  const { data: promosAtivas } = await admin
+    .from("comercial_promocoes").select("id,empreendimento,data_inicio,data_fim").eq("ativa", true);
+  const idsPromoAtiva = (promosAtivas ?? []).filter((p) => {
+    if (norm(p.empreendimento) !== alvo && norm(p.empreendimento) !== "todos") return false;
+    if (p.data_inicio && String(p.data_inicio).slice(0, 10) > hojeISO) return false;
+    if (p.data_fim && String(p.data_fim).slice(0, 10) < hojeISO) return false;
+    return true;
+  }).map((p) => p.id);
+  let promoPrices: number[] = [];
+  if (idsPromoAtiva.length) {
+    const { data: promoPrecos } = await admin
+      .from("comercial_promocoes_precos").select("promocao_id,num_lote,empreendimento,preco_promocional").eq("num_lote", num_lote);
+    promoPrices = (promoPrecos ?? [])
+      .filter((p) => idsPromoAtiva.includes(p.promocao_id) && norm(p.empreendimento) === alvo)
+      .map((p) => round2(p.preco_promocional)).filter((v) => v > 0);
+  }
   const TOL = 0.01;
   const isAv = Math.abs(valor_lote_av - preco_av_tabela) < TOL;
   const isPromo = promoPrices.some((p) => Math.abs(valor_lote_av - p) < TOL);
@@ -208,8 +223,8 @@ Deno.serve(async (req: Request) => {
   const honorarios = round2(comissao_base + bonificacao);
 
   // 9) Validações + cálculo das cláusulas
-  if (tipo === "aprazo" && entrada_bruta <= 0) return j({ erro: "ENTRADA_ZERO", mensagem: "entrada_bruta veio zerada em contrato à prazo." }, 400);
-  if (tipo === "aprazo" && parcela <= 0) return j({ erro: "PARCELA_ZERO", mensagem: "parcela_mensal veio zerada em contrato à prazo." }, 400);
+  if (tipo === "aprazo" && !(entrada_bruta > 0)) return j({ erro: "ENTRADA_ZERO", mensagem: "entrada_bruta veio zerada em contrato à prazo." }, 400);
+  if (tipo === "aprazo" && !(parcela > 0)) return j({ erro: "PARCELA_ZERO", mensagem: "parcela_mensal veio zerada em contrato à prazo." }, 400);
   const total_parcelas = tipo === "aprazo" ? round2(parcela * prazo) : 0;
   const total_reforcos = round2(reforcos.reduce((s, r) => s + r.valor, 0));
   let preco_total: number, valor_imovel_31: number;
