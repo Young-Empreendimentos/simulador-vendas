@@ -65,11 +65,6 @@ function extenso(valor: number): string {
 }
 const vf = (valor: number) => `R$ ${fmt(valor)} (${extenso(valor)})`;
 
-const VENDEDORA: Record<string, string> = {
-  young: "ITY  EMPREENDIMENTOS IMOBILIARIOS SPE LTDA., empresa brasileira, pessoa jurídica com sede na Rua Manduca Loureiro, s/n, bairro Cafifas em Itaqui – RS, inscrita no CNPJ n.º 52.675.236/0001-21, representada neste ato por EDUARDO PEREIRA TEBALDI, brasileiro, maior, empresário, inscrito no CPF/MF nº 004.999.680-00 e Carteira de Identidade nº 6080749929, expedida pela SSP-RS em 21/05/2015, residente e domiciliado na Rua Coronel Vicente Gomes, nº 467, apto 304, bairro Centro em Santo Antônio da Patrulha – RS, que convive em união estável em regime de separação total de bens com DANIELLE SOARES PORCIUNCULA, inscrita no CPF sob o nº 019.733.700-77 e Carteira de Identidade nº 2113422981, residente e domiciliada na Rua João Manoel Fernandes, nº 82, bairro Centro em Santo Antônio da Patrulha – RS.",
-  horizonte: "HORIZONTE NEGOCIOS IMOBILIARIOS  LTDA., empresa brasileira, pessoa jurídica com sede na na cidade de Itaqui – RS, inscrita no CNPJ n.º 19.861.261/0001-24, representada neste ato por CARLA SILVEIRA DELLAMORA, brasileira, solteira, maior, arquiteta e urbanista, inscrita no CPF/MF nº 016.797.290-12 e Carteira Nacional de Habilitação nº 05424745517, expedida pela DETRAN-RS, residente e domiciliado na Rua Domingos Martins, nº 2021, bairro Cidade Alta em Itaqui – RS.",
-};
-
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const PASTA_ID = Deno.env.get("CONTRATO_PASTA_ID") || "18W0BBrWOIhfAz1eGfDi1itly-KZl5ULF";
@@ -276,12 +271,14 @@ Deno.serve(async (req: Request) => {
   const Final_Contrato = `de outro, ${nomes}, na condição de ${condicao}`;
   const Data_Assinatura = dataExtenso(new Date());
 
+  // A VENDEDORA/EMPRESA já vem escrita em cada template (um por empreendimento);
+  // por isso NÃO substituímos {{Qualificacao_Vendedora}} — deixamos o template.
   const campos: Record<string, string> = {
     Qualificacao_Clientes: String(raw.Qualificacao_Clientes || ""),
     Valor_Imovel, Forma_de_Pagamento, Honorarios,
     Lote: num_lote, Area: area, Matricula: matricula, Onus: onusVal,
     Data_Assinatura, Comprador1: comprador1, Comprador2: comprador2,
-    Final_Contrato, Qualificacao_Vendedora: VENDEDORA[proprietario],
+    Final_Contrato,
   };
   const substituicoes: Record<string, string> = {
     "{{Qualificacao_Clientes}}": campos.Qualificacao_Clientes,
@@ -297,7 +294,6 @@ Deno.serve(async (req: Request) => {
     "{{Comprador1}}": campos.Comprador1,
     "{{Comprador2}}": campos.Comprador2,
     "{{Final_Contrato}}": campos.Final_Contrato,
-    "{{Qualificacao_Vendedora}}": campos.Qualificacao_Vendedora,
   };
   const requests = Object.entries(substituicoes).map(([text, replaceText]) => ({
     replaceAllText: { containsText: { text, matchCase: true }, replaceText },

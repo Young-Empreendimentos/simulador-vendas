@@ -96,7 +96,7 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
       } catch { /* mantém msg */ }
       throw new Error(msg)
     }
-    if (data?.erro) throw new Error(data.mensagem || data.erro)
+    if (data?.erro) throw new Error((data.mensagem || data.erro) + (data.detalhe ? ' — ' + data.detalhe : ''))
     return data
   }
 
@@ -222,7 +222,6 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
               ['3. Valor do Imóvel', res.campos.Valor_Imovel],
               ['4. Forma de Pagamento', res.campos.Forma_de_Pagamento],
               ['11. Honorários', res.campos.Honorarios],
-              ['Qualificação da Vendedora', res.campos.Qualificacao_Vendedora],
             ] as [string, string][]).map(([k, v]) => (
               <div key={k}>
                 <p className="text-xs text-gray-400 mb-1">{k}</p>
