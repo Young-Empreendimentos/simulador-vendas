@@ -291,6 +291,7 @@ export default function Simulador() {
 
   const [carregando, setCarregando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
+  const [erroPromo, setErroPromo] = useState(false)
   const [resultados, setResultados] = useState<Resultado[]>([])
   const [confirmacao, setConfirmacao] = useState<{ status_lote: string; mensagem: string } | null>(null)
   const [contratoSim, setContratoSim] = useState<Resultado | null>(null)
@@ -345,8 +346,10 @@ export default function Simulador() {
     requestAnimationFrame(() => valorRef.current?.focus())
   }
 
-  async function simular(confirmarFlag = false) {
+  async function simular(confirmarFlag = false, semPromo = false) {
     setErro(null)
+    setErroPromo(false)
+    if (semPromo) setPromocional(false)
     if (!confirmarFlag) setConfirmacao(null)
     if (!empreendimento) return setErro('Selecione o empreendimento.')
     if (!numLote.trim()) return setErro('Informe o número do lote.')
@@ -355,7 +358,7 @@ export default function Simulador() {
       empreendimento,
       num_lote: numLote.trim(),
       entrada: Number(entrada) || 0,
-      promocional,
+      promocional: semPromo ? false : promocional,
       preco_customizado: precoCustomizado,
       confirmar: confirmarFlag,
     }
@@ -387,6 +390,7 @@ export default function Simulador() {
       }
       if (data?.erro) {
         setErro(data.mensagem || data.erro)
+        setErroPromo(data.erro === 'PROMO_EXPIRADA' || data.erro === 'PROMO_NAO_ATIVA')
         return
       }
       setConfirmacao(null)
@@ -559,7 +563,14 @@ export default function Simulador() {
         )}
 
         {erro && (
-          <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{erro}</p>
+          <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
+            {erro}
+            {erroPromo && promocional && (
+              <button onClick={() => simular(false, true)} className="mt-2 block font-medium text-[#fe5009] hover:underline">
+                Simular sem promoção →
+              </button>
+            )}
+          </div>
         )}
       </div>
 

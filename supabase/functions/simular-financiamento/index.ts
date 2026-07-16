@@ -109,11 +109,10 @@ Deno.serve(async (req: Request) => {
       .select("id,empreendimento,prazo_maximo,data_inicio,data_fim,descricao,ativa")
       .eq("ativa", true);
     const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
-    const vigentes = (promos ?? []).filter((p) => {
-      const empOk = norm(p.empreendimento) === alvo || norm(p.empreendimento) === "todos";
-      if (!empOk) return false;
-      const ini = p.data_inicio ? new Date(p.data_inicio + "T00:00:00") : null;
-      const fim = p.data_fim ? new Date(p.data_fim + "T00:00:00") : null;
+    const parseD = (s: unknown) => (s ? new Date(String(s) + "T00:00:00") : null);
+    const doEmp = (promos ?? []).filter((p) => norm(p.empreendimento) === alvo || norm(p.empreendimento) === "todos");
+    const vigentes = doEmp.filter((p) => {
+      const ini = parseD(p.data_inicio); const fim = parseD(p.data_fim);
       if (ini && hoje < ini) return false;
       if (fim && hoje > fim) return false;
       return true;
@@ -123,7 +122,17 @@ Deno.serve(async (req: Request) => {
       if (espA !== espB) return espA - espB;
       return (b.prazo_maximo || 0) - (a.prazo_maximo || 0);
     });
-    if (vigentes.length === 0) return j({ erro: "PROMO_NAO_ATIVA", mensagem: `Sem promoção vigente para "${loteDb.empreendimento}".` });
+    if (vigentes.length === 0) {
+      // Como o bot: distingue promoção EXPIRADA de inexistente.
+      const expiradas = doEmp.filter((p) => { const fim = parseD(p.data_fim); return fim && hoje > fim; })
+        .sort((a, b) => (parseD(b.data_fim)?.getTime() || 0) - (parseD(a.data_fim)?.getTime() || 0));
+      if (expiradas.length > 0) {
+        const e = expiradas[0];
+        const df = e.data_fim ? String(e.data_fim).split("-").reverse().join("/") : "";
+        return j({ erro: "PROMO_EXPIRADA", mensagem: `A promoção "${e.descricao || ""}" expirou em ${df}. Desmarque "Promoção" para simular nas condições normais.` });
+      }
+      return j({ erro: "PROMO_NAO_ATIVA", mensagem: `Não há promoção ativa para "${loteDb.empreendimento}". Desmarque "Promoção" para simular nas condições normais.` });
+    }
     const promo = vigentes[0];
     prazo_maximo_promo_banco = parseInt(String(promo.prazo_maximo || 0));
     promo_descricao_banco = promo.descricao || "";
