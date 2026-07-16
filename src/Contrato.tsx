@@ -17,6 +17,7 @@ export type SimParaContrato = {
   reforcos: { mes: number; valor: string; data_str: string }[]
 }
 
+const brl = (n: number) => (Number(n) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const brDate = (iso: string) => {
   if (!iso) return ''
   const [a, m, d] = iso.split('-')
@@ -39,6 +40,7 @@ type Resposta = {
   dados_banco_empresa?: string
   corretor_nome?: string | null
   proprietario?: string
+  tem_corretor?: boolean
   _calc?: Record<string, string>
 }
 
@@ -130,45 +132,62 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
 
   const campo = 'w-full bg-[#0d0d0d] border border-[#333] rounded-lg px-3 py-1.5 text-white text-sm placeholder:text-gray-600 focus:border-[#fe5009] focus:outline-none'
   const label = 'block text-[11px] font-medium text-gray-400 mb-1'
-  const secao = 'font-display text-white text-sm border-b border-[#262626] pb-1'
+  const secao = 'font-display text-white text-xs uppercase tracking-wide text-gray-400'
+  const req = <span className="text-[#fe5009]">*</span>
+  const r = sim.resumo
 
   return (
     <div className="fixed inset-0 z-50 bg-black/70 overflow-y-auto p-4 sm:p-8" onClick={onClose}>
       <div className="mx-auto max-w-2xl bg-[#141414] border border-[#262626] rounded-2xl p-6 space-y-5" onClick={(e) => e.stopPropagation()}>
+        {/* Cabeçalho */}
         <div className="flex items-start justify-between">
           <div>
             <h2 className="font-display text-white text-lg">Gerar contrato</h2>
-            <p className="text-sm text-gray-400">{sim.empreendimento} · Lote {sim.num_lote} · {tipo === 'avista' ? 'à vista' : 'à prazo'}</p>
+            <p className="text-sm text-gray-400">{sim.empreendimento} · Lote {sim.num_lote}</p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-white text-xl leading-none">✕</button>
         </div>
 
+        {/* Resumo da simulação (o que está sendo contratado) */}
+        <div className="rounded-lg bg-[#0d0d0d] border border-[#262626] p-3">
+          <p className={label + ' mb-2'}>Resumo da simulação</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+            <div><p className="text-gray-500 text-[11px]">Valor à vista</p><p className="text-white">{brl(r.valor_lote_av)}</p></div>
+            <div><p className="text-gray-500 text-[11px]">Entrada</p><p className="text-white">{brl(r.entrada)}</p></div>
+            <div><p className="text-gray-500 text-[11px]">Parcelas</p><p className="text-white">{r.prazo_meses}x {brl(r.parcela_mensal)}</p></div>
+            <div><p className="text-gray-500 text-[11px]">ITBI + Cartório</p><p className="text-white">{brl(r.itbi + r.cartorio)}</p></div>
+          </div>
+        </div>
+
         <p className="text-xs text-gray-500">
-          Matrícula, área, ônus, vendedora e dados bancários são buscados automaticamente no banco. Preencha só o que segue:
+          Matrícula, área, ônus, vendedora, dados bancários e corretor são buscados automaticamente no sistema. Preencha só o que segue:
         </p>
 
-        {/* tipo */}
-        <div className="flex rounded-lg border border-[#333] overflow-hidden text-sm w-56">
-          <button type="button" onClick={() => setTipo('aprazo')} className={`flex-1 py-1.5 ${tipo === 'aprazo' ? 'bg-[#fe5009] text-white' : 'text-gray-400'}`}>À prazo</button>
-          <button type="button" onClick={() => setTipo('avista')} className={`flex-1 py-1.5 ${tipo === 'avista' ? 'bg-[#fe5009] text-white' : 'text-gray-400'}`}>À vista</button>
+        {/* Tipo */}
+        <div>
+          <p className={label}>Tipo de contrato</p>
+          <div className="flex rounded-lg border border-[#333] overflow-hidden text-sm w-56">
+            <button type="button" onClick={() => setTipo('aprazo')} className={`flex-1 py-1.5 ${tipo === 'aprazo' ? 'bg-[#fe5009] text-white' : 'text-gray-400'}`}>À prazo</button>
+            <button type="button" onClick={() => setTipo('avista')} className={`flex-1 py-1.5 ${tipo === 'avista' ? 'bg-[#fe5009] text-white' : 'text-gray-400'}`}>À vista</button>
+          </div>
         </div>
 
         {/* Compradores */}
         <div className="space-y-3">
           <h3 className={secao}>Compradores</h3>
           <div className="grid grid-cols-2 gap-3">
-            <div><label className={label}>Comprador 1</label><input className={campo} value={comprador1} onChange={(e) => setComprador1(e.target.value)} /></div>
+            <div><label className={label}>Comprador 1 {req}</label><input className={campo} value={comprador1} onChange={(e) => setComprador1(e.target.value)} /></div>
             <div><label className={label}>Comprador 2 (opcional)</label><input className={campo} value={comprador2} onChange={(e) => setComprador2(e.target.value)} /></div>
           </div>
           <div>
-            <label className={label}>Qualificação dos clientes (texto do contrato)</label>
+            <label className={label}>Qualificação dos clientes {req} <span className="text-gray-600">(entra no contrato)</span></label>
             <textarea className={campo + ' min-h-[70px]'} value={qualificacao} onChange={(e) => setQualificacao(e.target.value)} placeholder="nome, nacionalidade, estado civil, CPF, endereço…" />
           </div>
         </div>
 
-        {/* Datas de pagamento */}
+        {/* Pagamento */}
         <div className="space-y-3">
-          <h3 className={secao}>Pagamento</h3>
+          <h3 className={secao}>Datas de pagamento</h3>
           <div className="grid grid-cols-2 gap-3">
             <div><label className={label}>Data da entrada</label><input type="date" className={campo} value={dataEntrada} onChange={(e) => setDataEntrada(e.target.value)} /></div>
             {tipo === 'aprazo' && (
@@ -176,7 +195,7 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
             )}
           </div>
           {sim.reforcos.length > 0 && (
-            <p className="text-xs text-gray-500">Reforços (da simulação): {sim.reforcos.map((r) => r.data_str).join(', ')}</p>
+            <p className="text-xs text-gray-500">Reforços (da simulação): {sim.reforcos.map((x) => `${x.data_str || 'mês ' + x.mes} (${brl(Number(x.valor))})`).join(', ')}</p>
           )}
         </div>
 
@@ -190,7 +209,7 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
           {temCorretor && (
             <div className="flex flex-wrap items-end gap-3">
               <div className="flex-1 min-w-[220px]">
-                <label className={label}>Corretor (CPF/CNPJ ou nome)</label>
+                <label className={label}>Corretor — CPF/CNPJ ou nome {req}</label>
                 <input className={campo} value={corretorBusca} onChange={(e) => setCorretorBusca(e.target.value)} placeholder="ex: 026.996.530-04 ou João da Silva" />
               </div>
               {perfil?.pode_bonificar && (
@@ -206,18 +225,28 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
         <button onClick={preVisualizar} disabled={carregando} className="w-full bg-[#fe5009] hover:bg-orange-600 disabled:opacity-50 transition text-white font-medium py-2.5 rounded-lg">
           {carregando ? 'Montando…' : 'Pré-visualizar contrato'}
         </button>
-        {erro && <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{erro}</p>}
+        {erro && <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2 whitespace-pre-wrap">{erro}</p>}
 
-        {/* Prévia */}
+        {/* Conferência + prévia */}
         {res && (
           <div className="space-y-4 border-t border-[#262626] pt-4">
-            <h3 className={secao}>Prévia do contrato</h3>
-            {res.dados_lote && (
-              <p className="text-xs text-gray-500">
-                Do banco → matrícula {res.dados_lote.matricula || '—'} · área {res.dados_lote.area || '—'} · ônus {res.dados_lote.onus}
-                {res.corretor_nome ? ` · corretor ${res.corretor_nome}` : ''}
-              </p>
-            )}
+            {/* Dados buscados no sistema — para conferência */}
+            <div className="rounded-lg border border-[#004ebf]/30 bg-[#004ebf]/5 p-3">
+              <p className={label + ' mb-2'}>Dados buscados no sistema — confira</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+                <div><p className="text-gray-500 text-[11px]">Matrícula</p><p className="text-white">{res.dados_lote?.matricula || '—'}</p></div>
+                <div><p className="text-gray-500 text-[11px]">Área</p><p className="text-white">{res.dados_lote?.area || '—'}</p></div>
+                <div><p className="text-gray-500 text-[11px]">Ônus</p><p className="text-white">{res.dados_lote?.onus || '—'}</p></div>
+                <div><p className="text-gray-500 text-[11px]">Vendedora</p><p className="text-white capitalize">{res.proprietario || '—'} <span className="text-gray-600 text-[11px]">(do template)</span></p></div>
+                {res.tem_corretor && <div><p className="text-gray-500 text-[11px]">Corretor</p><p className="text-white">{res.corretor_nome || '—'}</p></div>}
+              </div>
+              {res.dados_banco_empresa && (
+                <p className="text-[11px] text-gray-500 mt-2">Dados bancários: <span className="text-gray-300">{res.dados_banco_empresa}</span></p>
+              )}
+            </div>
+
+            {/* Cláusulas montadas */}
+            <h3 className={secao}>Prévia das cláusulas</h3>
             {([
               ['3. Valor do Imóvel', res.campos.Valor_Imovel],
               ['4. Forma de Pagamento', res.campos.Forma_de_Pagamento],
@@ -228,6 +257,7 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
                 <pre className="whitespace-pre-wrap text-sm text-gray-200 bg-[#0d0d0d] border border-[#262626] rounded-lg p-3 font-sans">{v}</pre>
               </div>
             ))}
+
             {linkDoc ? (
               <a href={linkDoc} target="_blank" rel="noopener noreferrer" className="block w-full text-center bg-[#00bcbc] hover:brightness-110 transition text-white font-medium py-2.5 rounded-lg">
                 ✓ Contrato gerado — abrir no Google Docs
