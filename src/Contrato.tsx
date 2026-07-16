@@ -91,6 +91,8 @@ async function buscarCep(cep: string): Promise<{ cidade: string; uf: string; bai
     return { cidade: j.localidade || '', uf: j.uf || '', bairro: j.bairro || '' }
   } catch { return null }
 }
+// CPF e número do documento não podem ser o mesmo número (erro comum de digitação).
+const cpfDocIguais = (p: Pessoa) => !!soNum(p.cpf) && soNum(p.cpf) === soNum(p.docNumero)
 // Problemas que impedem gerar o contrato (nome e CPF obrigatórios; formatos se preenchidos).
 function problemasPessoa(p: Pessoa, rot: string): string[] {
   const e: string[] = []
@@ -99,6 +101,7 @@ function problemasPessoa(p: Pessoa, rot: string): string[] {
   else if (!cpfValido(p.cpf)) e.push(`${rot}: CPF inválido (confira os dígitos).`)
   const dp = docProblema(p.docTipo, p.docNumero)
   if (dp) e.push(`${rot}: ${dp}.`)
+  if (cpfDocIguais(p)) e.push(`${rot}: CPF e documento (RG/CNH) não podem ser o mesmo número.`)
   if (p.email.trim() && !emailValido(p.email)) e.push(`${rot}: e-mail com formato inválido.`)
   if (p.nascimento.trim() && !dataBRValida(p.nascimento)) e.push(`${rot}: nascimento deve ser DD/MM/AAAA.`)
   if (p.docExpedicao.trim() && !dataBRValida(p.docExpedicao)) e.push(`${rot}: data de expedição deve ser DD/MM/AAAA.`)
@@ -167,7 +170,7 @@ function PessoaCampos({ p, on }: { p: Pessoa; on: (patch: Partial<Pessoa>) => vo
           Convive em união estável
         </label>
       )}
-      <div><label className={label}>CPF</label><input className={mark(!!p.cpf.trim() && !cpfValido(p.cpf))} value={p.cpf} onChange={(e) => on({ cpf: e.target.value })} placeholder="000.000.000-00" /></div>
+      <div><label className={label}>CPF</label><input className={mark(!!p.cpf.trim() && (!cpfValido(p.cpf) || cpfDocIguais(p)))} value={p.cpf} onChange={(e) => on({ cpf: e.target.value })} placeholder="000.000.000-00" /></div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div>
           <label className={label}>Documento</label>
@@ -175,7 +178,7 @@ function PessoaCampos({ p, on }: { p: Pessoa; on: (patch: Partial<Pessoa>) => vo
             {['RG', 'CNH', 'RG/CNH', 'CTPS', 'Passaporte'].map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
         </div>
-        <div><label className={label}>Número</label><input className={mark(!!p.docNumero.trim() && !!docProblema(p.docTipo, p.docNumero))} value={p.docNumero} onChange={(e) => on({ docNumero: e.target.value })} placeholder={p.docTipo === 'CNH' ? '11 dígitos' : ''} /></div>
+        <div><label className={label}>Número</label><input className={mark(!!p.docNumero.trim() && (!!docProblema(p.docTipo, p.docNumero) || cpfDocIguais(p)))} value={p.docNumero} onChange={(e) => on({ docNumero: e.target.value })} placeholder={p.docTipo === 'CNH' ? '11 dígitos' : ''} /></div>
         <div><label className={label}>Órgão expedidor</label><input className={campo} value={p.docOrgao} onChange={(e) => on({ docOrgao: e.target.value })} placeholder="DETRAN/RS" /></div>
         <div><label className={label}>Data de expedição</label><input className={mark(!!p.docExpedicao.trim() && !dataBRValida(p.docExpedicao))} value={p.docExpedicao} onChange={(e) => on({ docExpedicao: e.target.value })} placeholder="07/11/2022" /></div>
       </div>
