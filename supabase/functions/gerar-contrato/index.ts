@@ -72,6 +72,32 @@ const VENDEDORA: Record<string, string> = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const PASTA_ID = Deno.env.get("CONTRATO_PASTA_ID") || "18W0BBrWOIhfAz1eGfDi1itly-KZl5ULF";
+
+// ── Google (conta de serviço): JWT RS256 -> access_token ──
+function b64url(bytes: Uint8Array): string {
+  let s = "";
+  for (const b of bytes) s += String.fromCharCode(b);
+  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+async function importPrivateKey(pem: string): Promise<CryptoKey> {
+  const clean = pem.replace(/-----[^-]+-----/g, "").replace(/\s+/g, "");
+  const der = Uint8Array.from(atob(clean), (c) => c.charCodeAt(0));
+  return await crypto.subtle.importKey("pkcs8", der, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"]);
+}
+async function googleToken(saJson: string): Promise<string> {
+  const sa = JSON.parse(saJson);
+  const now = Math.floor(Date.now() / 1000);
+  const enc = (o: unknown) => b64url(new TextEncoder().encode(JSON.stringify(o)));
+  const unsigned = `${enc({ alg: "RS256", typ: "JWT" })}.${enc({ iss: sa.client_email, scope: "https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/documents", aud: "https://oauth2.googleapis.com/token", iat: now, exp: now + 3600 })}`;
+  const key = await importPrivateKey(sa.private_key);
+  const sig = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, new TextEncoder().encode(unsigned));
+  const assertion = `${unsigned}.${b64url(new Uint8Array(sig))}`;
+  const r = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${assertion}` });
+  const t = await r.json();
+  if (!t.access_token) throw new Error("token: " + JSON.stringify(t).slice(0, 200));
+  return t.access_token;
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -86,7 +112,7 @@ Deno.serve(async (req: Request) => {
   const user = userData?.user;
   if (!user?.email) return j({ erro: "NAO_AUTENTICADO", mensagem: "Sessão inválida." }, 401);
   const { data: perfil } = await admin
-    .from("simulador_usuarios").select("papel,pode_autonomia,pode_bonificar,ativo")
+    .from("simulador_usuarios").select("nome,papel,pode_autonomia,pode_bonificar,ativo")
     .eq("email", user.email.toLowerCase()).maybeSingle();
   if (!perfil || !perfil.ativo) return j({ erro: "SEM_PERMISSAO", mensagem: "Acesso não liberado." }, 403);
 
@@ -276,6 +302,35 @@ Deno.serve(async (req: Request) => {
   const requests = Object.entries(substituicoes).map(([text, replaceText]) => ({
     replaceAllText: { containsText: { text, matchCase: true }, replaceText },
   }));
+
+  // 3b) Gerar o documento no Google Docs (se solicitado)
+  if (raw.gerar === true || raw.gerar === "true") {
+    const saJson = Deno.env.get("GOOGLE_SERVICE_ACCOUNT");
+    if (!saJson) return j({ erro: "GOOGLE_NAO_CONFIGURADO", mensagem: "Falta cadastrar o segredo GOOGLE_SERVICE_ACCOUNT no Supabase (Edge Functions → Secrets)." }, 501);
+    try {
+      const token = await googleToken(saJson);
+      const dt = new Date();
+      const p2 = (n: number) => String(n).padStart(2, "0");
+      const usuario = String(perfil.nome || user.email || "").replace(/[^A-Za-z0-9]/g, "");
+      const empClean = empreendimento_input.replace(/[^A-Za-z0-9]/g, "");
+      const nomeArquivo = `contratobot_${empClean}_${usuario}_${p2(dt.getDate())}${p2(dt.getMonth() + 1)}${dt.getFullYear()}_${num_lote}_${p2(dt.getHours())}${p2(dt.getMinutes())}${p2(dt.getSeconds())}`;
+      const copyR = await fetch(`https://www.googleapis.com/drive/v3/files/${template_id}/copy?supportsAllDrives=true`, {
+        method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ name: nomeArquivo, parents: [PASTA_ID] }),
+      });
+      const copy = await copyR.json();
+      if (!copy.id) return j({ erro: "DRIVE_COPY", mensagem: "Falha ao copiar o template no Drive. Confira se a conta de serviço tem acesso ao template e à pasta.", detalhe: JSON.stringify(copy).slice(0, 300) }, 502);
+      const buR = await fetch(`https://docs.googleapis.com/v1/documents/${copy.id}:batchUpdate`, {
+        method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ requests }),
+      });
+      const bu = await buR.json();
+      if (bu.error) return j({ erro: "DOCS_UPDATE", mensagem: "Falha ao preencher o documento.", detalhe: JSON.stringify(bu.error).slice(0, 300) }, 502);
+      return j({ sucesso: true, gerado: true, documento_id: copy.id, link: `https://docs.google.com/document/d/${copy.id}/edit`, nome_arquivo: nomeArquivo, proprietario, tem_corretor });
+    } catch (e) {
+      return j({ erro: "GOOGLE_FALHA", mensagem: "Erro ao falar com o Google: " + (e instanceof Error ? e.message : String(e)) }, 502);
+    }
+  }
 
   return j({
     sucesso: true,

@@ -56,14 +56,12 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
   const [bonus, setBonus] = useState('')
 
   const [carregando, setCarregando] = useState(false)
+  const [gerando, setGerando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [res, setRes] = useState<Resposta | null>(null)
+  const [linkDoc, setLinkDoc] = useState<string | null>(null)
 
-  async function preVisualizar() {
-    setErro(null); setRes(null)
-    if (!comprador1.trim()) return setErro('Informe o Comprador 1.')
-    if (temCorretor && !corretorBusca.trim()) return setErro('Informe o CPF/CNPJ ou nome do corretor.')
-
+  function montarBody(gerar: boolean): Record<string, unknown> {
     const body: Record<string, unknown> = {
       tipo_contrato: tipo,
       empreendimento: sim.empreendimento,
@@ -81,28 +79,52 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
       Comprador1: comprador1,
       Comprador2: comprador2,
       tem_corretor: temCorretor,
+      gerar,
     }
     if (temCorretor) body.corretor_busca = corretorBusca.trim()
     if (temCorretor && perfil?.pode_bonificar) body.bonus_comissao = Number(bonus) || 0
+    return body
+  }
 
+  async function chamar(gerar: boolean) {
+    const { data, error } = await supabase.functions.invoke('gerar-contrato', { body: montarBody(gerar) })
+    if (error) {
+      let msg = error.message
+      try {
+        const ctx = (error as { context?: Response }).context
+        if (ctx && typeof ctx.json === 'function') { const c = await ctx.json(); msg = c?.mensagem || c?.erro || msg }
+      } catch { /* mantém msg */ }
+      throw new Error(msg)
+    }
+    if (data?.erro) throw new Error(data.mensagem || data.erro)
+    return data
+  }
+
+  async function preVisualizar() {
+    setErro(null); setRes(null); setLinkDoc(null)
+    if (!comprador1.trim()) return setErro('Informe o Comprador 1.')
+    if (temCorretor && !corretorBusca.trim()) return setErro('Informe o CPF/CNPJ ou nome do corretor.')
     setCarregando(true)
     try {
-      const { data, error } = await supabase.functions.invoke('gerar-contrato', { body })
-      if (error) {
-        let msg = error.message
-        try {
-          const ctx = (error as { context?: Response }).context
-          if (ctx && typeof ctx.json === 'function') { const c = await ctx.json(); msg = c?.mensagem || c?.erro || msg }
-        } catch { /* mantém msg */ }
-        setErro(msg)
-        return
-      }
-      if (data?.erro) { setErro(data.mensagem || data.erro); return }
-      setRes(data as Resposta)
+      setRes(await chamar(false) as Resposta)
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Falha ao montar o contrato.')
     } finally {
       setCarregando(false)
+    }
+  }
+
+  async function gerarDocumento() {
+    setErro(null); setLinkDoc(null)
+    setGerando(true)
+    try {
+      const data = await chamar(true)
+      if (data?.link) setLinkDoc(data.link as string)
+      else setErro('Documento gerado, mas sem link de retorno.')
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Falha ao gerar o documento.')
+    } finally {
+      setGerando(false)
     }
   }
 
@@ -207,9 +229,15 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
                 <pre className="whitespace-pre-wrap text-sm text-gray-200 bg-[#0d0d0d] border border-[#262626] rounded-lg p-3 font-sans">{v}</pre>
               </div>
             ))}
-            <button disabled title="Disponível após configurar a conta de serviço do Google" className="w-full border border-[#333] text-gray-500 py-2.5 rounded-lg cursor-not-allowed">
-              Gerar documento no Google Docs (disponível após configurar o Google)
-            </button>
+            {linkDoc ? (
+              <a href={linkDoc} target="_blank" rel="noopener noreferrer" className="block w-full text-center bg-[#00bcbc] hover:brightness-110 transition text-white font-medium py-2.5 rounded-lg">
+                ✓ Contrato gerado — abrir no Google Docs
+              </a>
+            ) : (
+              <button onClick={gerarDocumento} disabled={gerando} className="w-full bg-[#fe5009] hover:bg-orange-600 disabled:opacity-50 transition text-white font-medium py-2.5 rounded-lg">
+                {gerando ? 'Gerando documento…' : 'Gerar documento no Google Docs'}
+              </button>
+            )}
           </div>
         )}
       </div>
