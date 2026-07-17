@@ -243,6 +243,27 @@ function Dropdown({
   )
 }
 
+// Toggle estilo switch — mesma semântica de um checkbox controlado.
+function Toggle({ on, onChange, label, hint }: { on: boolean; onChange: (v: boolean) => void; label: string; hint?: string }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      onClick={() => onChange(!on)}
+      className="w-full flex items-center justify-between gap-3 px-3 py-2.5 bg-[#0b111b] border border-white/[0.07] rounded-xl hover:border-white/20 transition-colors"
+    >
+      <span className="text-sm text-gray-200">
+        {label}
+        {hint && <span className="text-gray-600 text-xs ml-1.5">{hint}</span>}
+      </span>
+      <span className={`relative w-9 h-5 rounded-full shrink-0 transition-colors ${on ? 'bg-[#fe5009]' : 'bg-[#2a3342]'}`}>
+        <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${on ? 'left-[18px]' : 'left-0.5'}`} />
+      </span>
+    </button>
+  )
+}
+
 // Card de uma simulação (com a comissão escondida atrás do olhinho) — estilo Pingo Lead.
 function CardSimulacao({ r, onGerarContrato }: { r: Resultado; onGerarContrato: () => void }) {
   const [verComissao, setVerComissao] = useState(false)
@@ -514,216 +535,237 @@ export default function Simulador() {
   const label = 'block text-[11px] font-medium text-gray-400 mb-1'
 
   return (
-    <div className="space-y-4 max-w-5xl mx-auto">
-      {/* ---- Barra de simulação (horizontal) ---- */}
-      <div className="bg-[#0f1520] border border-white/[0.08] rounded-2xl p-4 space-y-3 shadow-xl shadow-black/20">
-        <div className="flex flex-wrap items-end gap-x-3 gap-y-3">
-          <div className="w-full sm:w-52">
-            <label className={label}>Empreendimento</label>
-            <Dropdown
-              ariaLabel="Empreendimento"
-              value={empreendimento}
-              onChange={setEmpreendimento}
-              placeholder="Selecione…"
-              options={EMPREENDIMENTOS.map((e) => ({ value: e, label: e }))}
-            />
-          </div>
-          <div className="w-16">
-            <label className={label}>Lote</label>
-            <input className={campo} value={numLote} onChange={(e) => setNumLote(e.target.value)} placeholder="nº" />
-          </div>
-          <div className="w-28">
-            <label className={label}>Entrada</label>
-            <input className={campo} type="number" value={entrada} onChange={(e) => setEntrada(e.target.value)} placeholder="R$" />
-          </div>
-          <div className="w-20">
-            <label className={label}>Prazo</label>
-            <input className={campo} type="number" value={prazo} onChange={(e) => setPrazo(e.target.value)} placeholder="parc." />
-          </div>
+    <>
+      <div className="max-w-6xl mx-auto lg:grid lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)] lg:gap-4 lg:items-start space-y-4 lg:space-y-0">
 
-          <div className="hidden sm:block w-px self-stretch bg-[#262626] mx-1" />
+        {/* ================= COLUNA ESQUERDA — formulário ================= */}
+        <div className="space-y-3 lg:sticky lg:top-4 lg:self-start">
+          <div className="bg-[#0f1520] border border-white/[0.08] rounded-2xl p-4 space-y-3 shadow-xl shadow-black/20">
+            <div className="flex items-center gap-2 pb-0.5">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fe5009" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="4" y="2" width="16" height="20" rx="2" /><line x1="8" y1="7" x2="16" y2="7" /><line x1="8" y1="11" x2="16" y2="11" /><line x1="8" y1="15" x2="13" y2="15" /></svg>
+              <h2 className="font-display text-white text-sm">Nova simulação</h2>
+            </div>
 
-          {/* opções na mesma linha (alinhadas à base dos campos) */}
-          <div className="flex items-center flex-wrap gap-x-4 gap-y-1 h-[34px] text-sm">
-            <label className="flex items-center gap-2 text-gray-300 whitespace-nowrap">
-              <input type="checkbox" checked={promocional} onChange={(e) => setPromocional(e.target.checked)} /> Promoção
-            </label>
+            {/* Campos principais */}
+            <div>
+              <label className={label}>Empreendimento</label>
+              <Dropdown
+                ariaLabel="Empreendimento"
+                value={empreendimento}
+                onChange={setEmpreendimento}
+                placeholder="Selecione…"
+                options={EMPREENDIMENTOS.map((e) => ({ value: e, label: e }))}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={label}>Lote</label>
+                <input className={campo} value={numLote} onChange={(e) => setNumLote(e.target.value)} placeholder="nº" />
+              </div>
+              <div>
+                <label className={label}>Prazo</label>
+                <input className={campo} type="number" value={prazo} onChange={(e) => setPrazo(e.target.value)} placeholder="parcelas" />
+              </div>
+            </div>
+            <div>
+              <label className={label}>Entrada</label>
+              <input className={campo} type="number" value={entrada} onChange={(e) => setEntrada(e.target.value)} placeholder="R$" />
+            </div>
+
+            {/* Condições */}
+            <div className="flex items-center gap-2 pt-1">
+              <span className="h-px flex-1 bg-white/[0.08]" />
+              <span className="text-[10px] uppercase tracking-wider text-gray-500">Condições</span>
+              <span className="h-px flex-1 bg-white/[0.08]" />
+            </div>
+
+            <Toggle on={promocional} onChange={setPromocional} label="Promoção" />
             {podeAutonomia && (
-              <label className="flex items-center gap-2 text-gray-300 whitespace-nowrap">
-                <input type="checkbox" checked={precoCustomizado} onChange={(e) => setPrecoCustomizado(e.target.checked)} /> Autonomia
-              </label>
-            )}
-            {precoCustomizado && (
-              <input className={campo + ' w-36'} type="number" value={valorCustom} onChange={(e) => setValorCustom(e.target.value)} placeholder="preço à vista R$" />
+              <>
+                <Toggle on={precoCustomizado} onChange={setPrecoCustomizado} label="Autonomia" hint="(preço custom.)" />
+                {precoCustomizado && (
+                  <input className={campo} type="number" value={valorCustom} onChange={(e) => setValorCustom(e.target.value)} placeholder="preço à vista R$" />
+                )}
+              </>
             )}
             {perfil?.pode_bonificar && (
-              <label className="flex items-center gap-2 text-gray-300 whitespace-nowrap">
-                Bônus <input className={campo + ' w-24'} type="number" value={bonus} onChange={(e) => setBonus(e.target.value)} placeholder="R$" />
-              </label>
-            )}
-            <button type="button" onClick={() => setReforcosAberto((v) => !v)} className="flex items-center gap-1.5 text-gray-300 hover:text-white whitespace-nowrap">
-              Reforços
-              {qtd > 0 && <span className="text-xs text-[#fe5009]">{qtd} · {brl(totalReforcos)}</span>}
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${reforcosAberto ? 'rotate-180' : ''}`}><path d="m6 9 6 6 6-6" /></svg>
-            </button>
-          </div>
-
-          <button
-            onClick={() => simular(false)}
-            disabled={carregando}
-            className="btn-shine w-full sm:w-auto sm:ml-auto self-end inline-flex items-center justify-center gap-2 min-w-[7.5rem] bg-gradient-to-b from-[#ff6a25] to-[#fe5009] hover:from-[#ff7a3a] hover:to-[#ff5a15] text-white font-semibold px-6 py-2 rounded-xl shadow-lg shadow-[#fe5009]/25 hover:shadow-[#fe5009]/40 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.97] disabled:opacity-60 disabled:translate-y-0 disabled:cursor-wait transition-all duration-200"
-          >
-            {carregando ? (
-              <>
-                <svg className="animate-spin-slow" width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.35" strokeWidth="3" />
-                  <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-                </svg>
-                Simulando…
-              </>
-            ) : (
-              <>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13 2 3 14h7l-1 8 10-12h-7z" /></svg>
-                Simular
-              </>
-            )}
-          </button>
-        </div>
-
-        {/* painel de reforços (full width quando aberto) */}
-        {reforcosAberto && (
-          <div className="border-t border-[#262626] pt-3 space-y-3">
-            {prazoN < 1 ? (
-              <p className="text-xs text-gray-500">Defina o <span className="text-gray-300">prazo</span> para gerar os reforços.</p>
-            ) : (
-              <div className="max-w-2xl space-y-3">
-                {/* Gerador: valor + frequência (+ 1ª data). Preenche a lista até a última parcela. */}
-                <div className="flex flex-wrap items-end gap-3">
-                  <div className="w-32">
-                    <label className={label}>Valor de cada</label>
-                    <input className={campo} type="text" inputMode="numeric" value={gValor} onChange={(e) => setGValor(e.target.value)} placeholder="ex: 5.000" />
-                  </div>
-                  <div className="w-36">
-                    <label className={label}>Frequência</label>
-                    <Dropdown
-                      ariaLabel="Frequência dos reforços"
-                      value={gFreq}
-                      onChange={setGFreq}
-                      options={[
-                        { value: '12', label: 'Anual' },
-                        { value: '6', label: 'Semestral' },
-                        { value: '3', label: 'Trimestral' },
-                        { value: '1', label: 'Mensal' },
-                        { value: 'custom', label: 'A cada N meses…' },
-                      ]}
-                    />
-                  </div>
-                  {gFreq === 'custom' && (
-                    <div className="w-24">
-                      <label className={label}>A cada (meses)</label>
-                      <input className={campo} type="number" value={gFreqN} onChange={(e) => setGFreqN(e.target.value)} placeholder="ex: 4" />
-                    </div>
-                  )}
-                  <div className="w-40">
-                    <label className={label}>1ª data <span className="text-gray-600">(opcional)</span></label>
-                    <input className={campo} type="date" value={gData} onChange={(e) => setGData(e.target.value)} />
-                  </div>
-                  {reforcosManual && parseBRL(gValor) > 0 && gFreqMeses > 0 && (
-                    <button type="button" onClick={regerar} className="self-end text-xs text-gray-400 hover:text-[#fe5009] underline underline-offset-2 pb-1.5 whitespace-nowrap" title="Descarta as edições e regenera a série a partir do valor e da frequência acima">↺ Regerar até o fim</button>
-                  )}
-                </div>
-
-                <p className="text-[11px] text-gray-600">
-                  Preenchido automaticamente até a <span className="text-gray-400">última parcela (mês {prazoN})</span>. Edite as datas e os valores como quiser — dá pra marcar até 6 meses depois do fim (mês {teto}).
-                </p>
-
-                {/* Lista editável — no mesmo espírito das parcelas */}
-                {reforcos.length > 0 ? (
-                  <div className="max-w-md rounded-lg border border-[#262626] overflow-hidden">
-                    <div className="grid grid-cols-[1fr_1fr_auto] gap-px bg-[#262626] text-[10px] text-gray-500 uppercase tracking-wide">
-                      <span className="bg-[#0d0d0d] px-3 py-1.5">Data</span>
-                      <span className="bg-[#0d0d0d] px-3 py-1.5">Valor</span>
-                      <span className="bg-[#0d0d0d] px-3 py-1.5 w-9" />
-                    </div>
-                    <div className="divide-y divide-[#1f1f1f] max-h-[28rem] overflow-y-auto">
-                      {reforcos.map((x) => {
-                        const m = mesesDeHoje(x.data)
-                        const dataFora = !!x.data && (m < 1 || m > teto)
-                        const valorFalta = !!x.data && !(x.valor > 0)
-                        return (
-                          <div key={x.id} className="grid grid-cols-[1fr_1fr_auto] items-center gap-2 px-2 py-1.5">
-                            <input className={campo + (dataFora ? ' border-red-500/60' : '')} type="date" value={x.data} onChange={(e) => editReforco(x.id, { data: e.target.value })} title={dataFora ? `Fora do intervalo permitido (mês 1 a ${teto}).` : ''} />
-                            <input className={campo + (valorFalta ? ' border-red-500/60' : '')} type="number" value={x.valor || ''} onChange={(e) => editReforco(x.id, { valor: Number(e.target.value) || 0 })} placeholder="R$" title={valorFalta ? 'Informe um valor para este reforço entrar no cálculo.' : ''} />
-                            <button type="button" aria-label="Remover reforço" onClick={() => delReforco(x.id)} className="text-gray-600 hover:text-red-400 w-9">✕</button>
-                          </div>
-                        )
-                      })}
-                    </div>
-                    <div className="px-3 py-2 bg-[#0d0d0d] border-t border-[#262626] space-y-1">
-                      <div className="flex items-center justify-between">
-                        <button type="button" onClick={addReforco} className="text-xs text-[#fe5009] hover:text-orange-400 font-medium">+ adicionar reforço</button>
-                        <span className="text-xs text-gray-400">{qtd} {qtd === 1 ? 'reforço' : 'reforços'} · {brl(totalReforcos)}</span>
-                      </div>
-                      {excluidas > 0 && (
-                        <p className="text-[11px] text-yellow-500/80">{excluidas} {excluidas === 1 ? 'linha não entra' : 'linhas não entram'} no cálculo (data fora do prazo ou valor vazio).</p>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-3">
-                    <p className="text-xs text-gray-600">Informe o valor e a frequência acima para gerar os reforços.</p>
-                    <button type="button" onClick={addReforco} className="text-xs text-[#fe5009] hover:text-orange-400 font-medium whitespace-nowrap">+ adicionar manualmente</button>
-                  </div>
-                )}
+              <div className="flex items-center justify-between gap-3 px-3 py-2.5 bg-[#0b111b] border border-white/[0.07] rounded-xl">
+                <span className="text-sm text-gray-200">Bônus</span>
+                <input className="bg-transparent text-right text-sm text-white w-28 focus:outline-none placeholder:text-gray-600" type="number" value={bonus} onChange={(e) => setBonus(e.target.value)} placeholder="R$ 0" />
               </div>
             )}
-          </div>
-        )}
 
-        {erro && (
-          <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
-            {erro}
-            {erroPromo && promocional && (
-              <button onClick={() => simular(false, true)} className="mt-2 block font-medium text-[#fe5009] hover:underline">
-                Simular sem promoção →
+            {/* Reforços — seção própria colapsável */}
+            <div className="bg-[#0b111b] border border-white/[0.07] rounded-xl">
+              <button type="button" onClick={() => setReforcosAberto((v) => !v)} aria-expanded={reforcosAberto} className="w-full flex items-center justify-between gap-2 px-3 py-2.5 text-left">
+                <span className="text-sm text-gray-200">Reforços</span>
+                <span className="flex items-center gap-1.5 text-xs">
+                  {qtd > 0 ? <span className="text-[#fe5009]">{qtd} · {brl(totalReforcos)}</span> : <span className="text-gray-600">opcional</span>}
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`text-gray-500 transition-transform ${reforcosAberto ? 'rotate-180' : ''}`}><path d="m6 9 6 6 6-6" /></svg>
+                </span>
               </button>
-            )}
-          </div>
-        )}
-      </div>
+              {reforcosAberto && (
+                <div className="px-3 pb-3 pt-3 border-t border-white/[0.06] space-y-3">
+                  {prazoN < 1 ? (
+                    <p className="text-xs text-gray-500">Defina o <span className="text-gray-300">prazo</span> para gerar os reforços.</p>
+                  ) : (
+                    <>
+                      {/* Gerador: valor + frequência (+ 1ª data). Preenche a lista até a última parcela. */}
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <div>
+                          <label className={label}>Valor de cada</label>
+                          <input className={campo} type="text" inputMode="numeric" value={gValor} onChange={(e) => setGValor(e.target.value)} placeholder="ex: 5.000" />
+                        </div>
+                        <div>
+                          <label className={label}>Frequência</label>
+                          <Dropdown
+                            ariaLabel="Frequência dos reforços"
+                            value={gFreq}
+                            onChange={setGFreq}
+                            options={[
+                              { value: '12', label: 'Anual' },
+                              { value: '6', label: 'Semestral' },
+                              { value: '3', label: 'Trimestral' },
+                              { value: '1', label: 'Mensal' },
+                              { value: 'custom', label: 'A cada N meses…' },
+                            ]}
+                          />
+                        </div>
+                      </div>
+                      {gFreq === 'custom' && (
+                        <div>
+                          <label className={label}>A cada quantos meses</label>
+                          <input className={campo} type="number" value={gFreqN} onChange={(e) => setGFreqN(e.target.value)} placeholder="ex: 4" />
+                        </div>
+                      )}
+                      <div>
+                        <label className={label}>1ª data <span className="text-gray-600">(opcional)</span></label>
+                        <input className={campo} type="date" value={gData} onChange={(e) => setGData(e.target.value)} />
+                      </div>
+                      {reforcosManual && parseBRL(gValor) > 0 && gFreqMeses > 0 && (
+                        <button type="button" onClick={regerar} className="text-xs text-gray-400 hover:text-[#fe5009] underline underline-offset-2 whitespace-nowrap" title="Descarta as edições e regenera a série a partir do valor e da frequência acima">↺ Regerar até o fim</button>
+                      )}
 
-      {/* ---- Confirmação ---- */}
-      {confirmacao && (
-        <div className="pop-in bg-[#0f1520] border border-yellow-500/40 rounded-2xl p-5 space-y-4 max-w-xl shadow-xl shadow-black/20">
-          <div className="flex items-center gap-2">
-            <span className="text-yellow-400 text-xl">⚠️</span>
-            <span className="font-display text-white text-base">Lote não está disponível</span>
-          </div>
-          <p className="text-sm text-gray-300">{confirmacao.mensagem}</p>
-          <div className="flex gap-3">
-            <button onClick={() => simular(true)} disabled={carregando} className="flex-1 bg-[#fe5009] hover:bg-orange-600 disabled:opacity-50 transition text-white font-medium py-2 rounded-lg">
-              {carregando ? 'Calculando…' : 'Simular mesmo assim'}
+                      <p className="text-[11px] text-gray-600">
+                        Preenchido automaticamente até a <span className="text-gray-400">última parcela (mês {prazoN})</span>. Edite as datas e os valores como quiser — dá pra marcar até 6 meses depois do fim (mês {teto}).
+                      </p>
+
+                      {/* Lista editável — no mesmo espírito das parcelas */}
+                      {reforcos.length > 0 ? (
+                        <div className="rounded-lg border border-[#262626] overflow-hidden">
+                          <div className="grid grid-cols-[1fr_1fr_auto] gap-px bg-[#262626] text-[10px] text-gray-500 uppercase tracking-wide">
+                            <span className="bg-[#0d0d0d] px-2.5 py-1.5">Data</span>
+                            <span className="bg-[#0d0d0d] px-2.5 py-1.5">Valor</span>
+                            <span className="bg-[#0d0d0d] px-2 py-1.5 w-8" />
+                          </div>
+                          <div className="divide-y divide-[#1f1f1f] max-h-[22rem] overflow-y-auto">
+                            {reforcos.map((x) => {
+                              const m = mesesDeHoje(x.data)
+                              const dataFora = !!x.data && (m < 1 || m > teto)
+                              const valorFalta = !!x.data && !(x.valor > 0)
+                              return (
+                                <div key={x.id} className="grid grid-cols-[1fr_1fr_auto] items-center gap-1.5 px-1.5 py-1.5">
+                                  <input className={campo + ' px-2' + (dataFora ? ' border-red-500/60' : '')} type="date" value={x.data} onChange={(e) => editReforco(x.id, { data: e.target.value })} title={dataFora ? `Fora do intervalo permitido (mês 1 a ${teto}).` : ''} />
+                                  <input className={campo + ' px-2' + (valorFalta ? ' border-red-500/60' : '')} type="number" value={x.valor || ''} onChange={(e) => editReforco(x.id, { valor: Number(e.target.value) || 0 })} placeholder="R$" title={valorFalta ? 'Informe um valor para este reforço entrar no cálculo.' : ''} />
+                                  <button type="button" aria-label="Remover reforço" onClick={() => delReforco(x.id)} className="text-gray-600 hover:text-red-400 w-8">✕</button>
+                                </div>
+                              )
+                            })}
+                          </div>
+                          <div className="px-3 py-2 bg-[#0d0d0d] border-t border-[#262626] space-y-1">
+                            <div className="flex items-center justify-between">
+                              <button type="button" onClick={addReforco} className="text-xs text-[#fe5009] hover:text-orange-400 font-medium">+ adicionar reforço</button>
+                              <span className="text-xs text-gray-400">{qtd} {qtd === 1 ? 'reforço' : 'reforços'} · {brl(totalReforcos)}</span>
+                            </div>
+                            {excluidas > 0 && (
+                              <p className="text-[11px] text-yellow-500/80">{excluidas} {excluidas === 1 ? 'linha não entra' : 'linhas não entram'} no cálculo (data fora do prazo ou valor vazio).</p>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-3">
+                          <p className="text-xs text-gray-600">Informe o valor e a frequência acima para gerar os reforços.</p>
+                          <button type="button" onClick={addReforco} className="text-xs text-[#fe5009] hover:text-orange-400 font-medium whitespace-nowrap">+ manual</button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Simular */}
+            <button
+              onClick={() => simular(false)}
+              disabled={carregando}
+              className="btn-shine w-full inline-flex items-center justify-center gap-2 bg-gradient-to-b from-[#ff6a25] to-[#fe5009] hover:from-[#ff7a3a] hover:to-[#ff5a15] text-white font-semibold px-6 py-2.5 rounded-xl shadow-lg shadow-[#fe5009]/25 hover:shadow-[#fe5009]/40 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] disabled:opacity-60 disabled:translate-y-0 disabled:cursor-wait transition-all duration-200"
+            >
+              {carregando ? (
+                <>
+                  <svg className="animate-spin-slow" width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.35" strokeWidth="3" />
+                    <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                  </svg>
+                  Simulando…
+                </>
+              ) : (
+                <>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13 2 3 14h7l-1 8 10-12h-7z" /></svg>
+                  Simular
+                </>
+              )}
             </button>
-            <button onClick={() => setConfirmacao(null)} className="flex-1 border border-[#333] text-gray-300 hover:text-white py-2 rounded-lg">Cancelar</button>
           </div>
-        </div>
-      )}
 
-      {/* ---- Resultados (grade) ---- */}
-      {resultados.length === 0 && !confirmacao && (
-        <div className="pop-in bg-[#0f1520] border border-dashed border-white/[0.12] rounded-2xl p-8 text-center text-gray-500 text-sm">
-          Preencha os dados e clique em <span className="text-gray-300 mx-1">Simular</span> para ver a proposta.
+          {erro && (
+            <div className="pop-in text-sm text-red-400 bg-red-500/10 border border-red-500/30 rounded-xl px-3 py-2">
+              {erro}
+              {erroPromo && promocional && (
+                <button onClick={() => simular(false, true)} className="mt-2 block font-medium text-[#fe5009] hover:underline">
+                  Simular sem promoção →
+                </button>
+              )}
+            </div>
+          )}
         </div>
-      )}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 items-start">
-        {resultados.map((r, i) => (
-          <CardSimulacao key={resultados.length - i} r={r} onGerarContrato={() => setContratoSim(r)} />
-        ))}
+
+        {/* ================= COLUNA DIREITA — proposta ================= */}
+        <div className="space-y-4">
+          {confirmacao && (
+            <div className="pop-in bg-[#0f1520] border border-yellow-500/40 rounded-2xl p-5 space-y-4 shadow-xl shadow-black/20">
+              <div className="flex items-center gap-2">
+                <span className="text-yellow-400 text-xl">⚠️</span>
+                <span className="font-display text-white text-base">Lote não está disponível</span>
+              </div>
+              <p className="text-sm text-gray-300">{confirmacao.mensagem}</p>
+              <div className="flex gap-3">
+                <button onClick={() => simular(true)} disabled={carregando} className="flex-1 bg-[#fe5009] hover:bg-orange-600 disabled:opacity-50 transition text-white font-medium py-2 rounded-lg">
+                  {carregando ? 'Calculando…' : 'Simular mesmo assim'}
+                </button>
+                <button onClick={() => setConfirmacao(null)} className="flex-1 border border-[#333] text-gray-300 hover:text-white py-2 rounded-lg">Cancelar</button>
+              </div>
+            </div>
+          )}
+
+          {resultados.length === 0 && !confirmacao && (
+            <div className="pop-in bg-[#0f1520] border border-dashed border-white/[0.12] rounded-2xl p-8 text-center text-gray-500 text-sm min-h-[10rem] flex items-center justify-center">
+              <span>Preencha os dados e clique em <span className="text-gray-300 mx-1">Simular</span> para ver a proposta.</span>
+            </div>
+          )}
+
+          {resultados.length > 0 && (
+            <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(300px,1fr))] items-start">
+              {resultados.map((r, i) => (
+                <CardSimulacao key={resultados.length - i} r={r} onGerarContrato={() => setContratoSim(r)} />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {contratoSim && (
         <Contrato sim={contratoSim} onClose={() => setContratoSim(null)} />
       )}
-    </div>
+    </>
   )
 }
