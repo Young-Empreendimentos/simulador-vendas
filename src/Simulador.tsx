@@ -422,7 +422,7 @@ export default function Simulador() {
   return (
     <div className="space-y-4 max-w-6xl mx-auto">
       {/* ---- Barra de simulação (horizontal) ---- */}
-      <div className="bg-[#0f1520] border border-white/[0.08] rounded-2xl p-4 space-y-3">
+      <div className="bg-[#0f1520] border border-white/[0.08] rounded-2xl p-4 space-y-3 shadow-xl shadow-black/20">
         <div className="flex flex-wrap items-end gap-x-3 gap-y-3">
           <div className="w-52">
             <label className={label}>Empreendimento</label>
@@ -474,9 +474,22 @@ export default function Simulador() {
           <button
             onClick={() => simular(false)}
             disabled={carregando}
-            className="ml-auto self-end bg-[#fe5009] hover:bg-orange-600 disabled:opacity-50 transition text-white font-medium px-6 py-1.5 rounded-lg"
+            className="btn-shine ml-auto self-end inline-flex items-center justify-center gap-2 min-w-[7.5rem] bg-gradient-to-b from-[#ff6a25] to-[#fe5009] hover:from-[#ff7a3a] hover:to-[#ff5a15] text-white font-semibold px-6 py-2 rounded-xl shadow-lg shadow-[#fe5009]/25 hover:shadow-[#fe5009]/40 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.97] disabled:opacity-60 disabled:translate-y-0 disabled:cursor-wait transition-all duration-200"
           >
-            {carregando ? '…' : 'Simular'}
+            {carregando ? (
+              <>
+                <svg className="animate-spin-slow" width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.35" strokeWidth="3" />
+                  <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                </svg>
+                Simulando…
+              </>
+            ) : (
+              <>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13 2 3 14h7l-1 8 10-12h-7z" /></svg>
+                Simular
+              </>
+            )}
           </button>
         </div>
 
@@ -579,7 +592,7 @@ export default function Simulador() {
 
       {/* ---- Confirmação ---- */}
       {confirmacao && (
-        <div className="bg-[#0f1520] border border-yellow-500/40 rounded-2xl p-5 space-y-4 max-w-xl">
+        <div className="pop-in bg-[#0f1520] border border-yellow-500/40 rounded-2xl p-5 space-y-4 max-w-xl shadow-xl shadow-black/20">
           <div className="flex items-center gap-2">
             <span className="text-yellow-400 text-xl">⚠️</span>
             <span className="font-display text-white text-base">Lote não está disponível</span>
@@ -596,7 +609,7 @@ export default function Simulador() {
 
       {/* ---- Resultados (grade) ---- */}
       {resultados.length === 0 && !confirmacao && (
-        <div className="bg-[#0f1520] border border-dashed border-white/[0.12] rounded-2xl p-8 text-center text-gray-500 text-sm">
+        <div className="pop-in bg-[#0f1520] border border-dashed border-white/[0.12] rounded-2xl p-8 text-center text-gray-500 text-sm">
           Preencha os dados e clique em <span className="text-gray-300 mx-1">Simular</span> para ver a proposta.
         </div>
       )}
