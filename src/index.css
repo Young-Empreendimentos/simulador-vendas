@@ -3,6 +3,14 @@
 :root {
   --brand-orange: #fe5009;
   --brand-navy: #061b39;
+  /* faz os controles nativos que sobrarem (selects do contrato, date pickers) abrirem no tema escuro */
+  color-scheme: dark;
+}
+
+/* checkbox/radio na cor da marca em vez do azul padrão do sistema */
+input[type="checkbox"], input[type="radio"] {
+  accent-color: var(--brand-orange);
+  cursor: pointer;
 }
 
 html, body, #root { height: 100%; }

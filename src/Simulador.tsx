@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { supabase } from './lib/supabase'
 import { useAuth } from './auth'
 import Contrato from './Contrato'
@@ -147,6 +147,100 @@ function CountUp({ value, className }: { value: number; className?: string }) {
     return () => cancelAnimationFrame(raf)
   }, [value])
   return <span className={className}>{brl(v)}</span>
+}
+
+// Dropdown próprio (o <select> nativo abre uma lista branca do sistema que não dá
+// pra estilizar). Tema navy, fecha ao clicar fora e navega com teclado.
+type Opcao = { value: string; label: string }
+function Dropdown({
+  value, onChange, options, placeholder, className, ariaLabel,
+}: {
+  value: string
+  onChange: (v: string) => void
+  options: Opcao[]
+  placeholder?: string
+  className?: string
+  ariaLabel?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const [hi, setHi] = useState(-1)
+  const ref = useRef<HTMLDivElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+  const sel = options.find((o) => o.value === value)
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+
+  useEffect(() => {
+    if (open) setHi(Math.max(0, options.findIndex((o) => o.value === value)))
+  }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const escolher = (i: number) => {
+    const o = options[i]
+    if (o) { onChange(o.value); setOpen(false) }
+  }
+  const onKey = (e: ReactKeyboardEvent) => {
+    if (e.key === 'Escape') { setOpen(false); return }
+    if (!open && (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown')) {
+      e.preventDefault(); setOpen(true); return
+    }
+    if (!open) return
+    if (e.key === 'ArrowDown') { e.preventDefault(); setHi((h) => Math.min(options.length - 1, h + 1)) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setHi((h) => Math.max(0, h - 1)) }
+    else if (e.key === 'Enter') { e.preventDefault(); escolher(hi) }
+  }
+
+  return (
+    <div ref={ref} className={`relative ${className ?? ''}`}>
+      <button
+        type="button"
+        aria-label={ariaLabel}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        onKeyDown={onKey}
+        className="w-full flex items-center justify-between gap-2 bg-[#0b111b] border border-white/[0.08] rounded-lg px-2.5 py-1.5 text-sm text-left hover:border-white/20 focus:border-[#fe5009] focus:outline-none transition-colors"
+      >
+        <span className={`truncate ${sel ? 'text-white' : 'text-gray-500'}`}>{sel ? sel.label : (placeholder ?? 'Selecione…')}</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`}><path d="m6 9 6 6 6-6" /></svg>
+      </button>
+      {open && (
+        <div
+          ref={listRef}
+          role="listbox"
+          className="absolute z-40 left-0 mt-1.5 w-full min-w-max max-h-64 overflow-auto rounded-xl border border-white/[0.1] bg-[#0f1520] shadow-2xl shadow-black/60 p-1 pop-in"
+        >
+          {options.map((o, i) => {
+            const ativo = o.value === value
+            return (
+              <button
+                key={o.value}
+                type="button"
+                role="option"
+                aria-selected={ativo}
+                onMouseEnter={() => setHi(i)}
+                onClick={() => escolher(i)}
+                className={`w-full text-left rounded-lg px-2.5 py-1.5 text-sm flex items-center justify-between gap-3 transition-colors ${
+                  hi === i ? 'bg-white/[0.07]' : ''
+                } ${ativo ? 'text-[#fe5009]' : 'text-gray-200'}`}
+              >
+                <span className="truncate">{o.label}</span>
+                {ativo && (
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><path d="m5 12 5 5L20 7" /></svg>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
 }
 
 // Card de uma simulação (com a comissão escondida atrás do olhinho) — estilo Pingo Lead.
@@ -426,10 +520,13 @@ export default function Simulador() {
         <div className="flex flex-wrap items-end gap-x-3 gap-y-3">
           <div className="w-52">
             <label className={label}>Empreendimento</label>
-            <select className={campo} value={empreendimento} onChange={(e) => setEmpreendimento(e.target.value)}>
-              <option value="">Selecione…</option>
-              {EMPREENDIMENTOS.map((e) => (<option key={e} value={e}>{e}</option>))}
-            </select>
+            <Dropdown
+              ariaLabel="Empreendimento"
+              value={empreendimento}
+              onChange={setEmpreendimento}
+              placeholder="Selecione…"
+              options={EMPREENDIMENTOS.map((e) => ({ value: e, label: e }))}
+            />
           </div>
           <div className="w-16">
             <label className={label}>Lote</label>
@@ -508,13 +605,18 @@ export default function Simulador() {
                   </div>
                   <div className="w-36">
                     <label className={label}>Frequência</label>
-                    <select className={campo} value={gFreq} onChange={(e) => setGFreq(e.target.value)}>
-                      <option value="12">Anual</option>
-                      <option value="6">Semestral</option>
-                      <option value="3">Trimestral</option>
-                      <option value="1">Mensal</option>
-                      <option value="custom">A cada N meses…</option>
-                    </select>
+                    <Dropdown
+                      ariaLabel="Frequência dos reforços"
+                      value={gFreq}
+                      onChange={setGFreq}
+                      options={[
+                        { value: '12', label: 'Anual' },
+                        { value: '6', label: 'Semestral' },
+                        { value: '3', label: 'Trimestral' },
+                        { value: '1', label: 'Mensal' },
+                        { value: 'custom', label: 'A cada N meses…' },
+                      ]}
+                    />
                   </div>
                   {gFreq === 'custom' && (
                     <div className="w-24">
