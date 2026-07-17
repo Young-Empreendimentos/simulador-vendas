@@ -2,5 +2,5 @@
 // Fonte única usada pelo Simulador e pelo Portal de usuários.
 export const EMPREENDIMENTOS: string[] = [
   'Algarve', 'Aurora', 'Erico Verissimo', 'Ilha dos Açores',
-  'Montecarlo', 'Morada da Coxilha', 'Parque Lorena 2',
+  'Montecarlo', 'Morada da Coxilha', 'Parque da Guarda Residence', 'Parque Lorena 2',
 ]
