@@ -18,6 +18,7 @@ body {
   margin: 0;
   color: #f2f2f2;
   background: #070b12;
+  overflow-x: clip; /* evita barra horizontal transitória sem quebrar o header sticky */
   /* leve brilho no topo, estilo Pingo Lead */
   background-image:
     radial-gradient(900px 500px at 80% -10%, rgba(254, 80, 9, 0.10), transparent 60%),

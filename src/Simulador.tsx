@@ -645,7 +645,7 @@ export default function Simulador() {
                       <span className="bg-[#0d0d0d] px-3 py-1.5">Valor</span>
                       <span className="bg-[#0d0d0d] px-3 py-1.5 w-9" />
                     </div>
-                    <div className="divide-y divide-[#1f1f1f] max-h-52 overflow-y-auto">
+                    <div className="divide-y divide-[#1f1f1f] max-h-[28rem] overflow-y-auto">
                       {reforcos.map((x) => {
                         const m = mesesDeHoje(x.data)
                         const dataFora = !!x.data && (m < 1 || m > teto)
