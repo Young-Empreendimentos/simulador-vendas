@@ -2,12 +2,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboa
 import { supabase } from './lib/supabase'
 import { useAuth } from './auth'
 import Contrato from './Contrato'
-
-// Nomes exatos como estão em comercial_tabela_precos (a função normaliza no servidor).
-const EMPREENDIMENTOS = [
-  'Algarve', 'Aurora', 'Erico Verissimo', 'Ilha dos Açores',
-  'Montecarlo', 'Morada da Coxilha', 'Parque Lorena 2',
-]
+import { EMPREENDIMENTOS } from './empreendimentos'
 
 // Reforços por DATA (como o bot): o financiamento começa HOJE; o "mês" do reforço
 // é a diferença em meses entre a data informada e hoje. Datas ISO (yyyy-mm-dd).
@@ -414,6 +409,17 @@ export default function Simulador() {
   const ehMontecarlo = empreendimento.toLowerCase() === 'montecarlo'
   const podeAutonomia = !!perfil?.pode_autonomia && ehMontecarlo
 
+  // Empreendimentos liberados pro usuário (vazio no perfil = todos).
+  const empPermitidos = useMemo(() => {
+    const p = perfil?.empreendimentos ?? []
+    return p.length ? EMPREENDIMENTOS.filter((e) => p.includes(e)) : EMPREENDIMENTOS
+  }, [perfil])
+  // Se só tem 1, nem mostra o seletor — puxa direto.
+  const empUnico = empPermitidos.length === 1 ? empPermitidos[0] : null
+  useEffect(() => {
+    if (empUnico && empreendimento !== empUnico) setEmpreendimento(empUnico)
+  }, [empUnico]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Reforços: a lista editável é a fonte única (resumo + payload).
   const prazoN = Number(prazo) || 0
   const LIMITE = limiteReforco(empreendimento)
@@ -549,13 +555,20 @@ export default function Simulador() {
             {/* Campos principais */}
             <div>
               <label className={label}>Empreendimento</label>
-              <Dropdown
-                ariaLabel="Empreendimento"
-                value={empreendimento}
-                onChange={setEmpreendimento}
-                placeholder="Selecione…"
-                options={EMPREENDIMENTOS.map((e) => ({ value: e, label: e }))}
-              />
+              {empUnico ? (
+                <div className="w-full flex items-center gap-2 bg-[#0b111b] border border-white/[0.08] rounded-lg px-2.5 py-1.5 text-sm text-white">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fe5009" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" /><circle cx="12" cy="10" r="3" /></svg>
+                  {empUnico}
+                </div>
+              ) : (
+                <Dropdown
+                  ariaLabel="Empreendimento"
+                  value={empreendimento}
+                  onChange={setEmpreendimento}
+                  placeholder="Selecione…"
+                  options={empPermitidos.map((e) => ({ value: e, label: e }))}
+                />
+              )}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
