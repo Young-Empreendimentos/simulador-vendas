@@ -61,7 +61,10 @@ function AppShell() {
   return (
     <div className="min-h-full">
       <header className="flex items-center justify-between px-6 py-2.5 bg-gradient-to-r from-[#061b39] to-[#0d0d0d] border-b border-[#232323]">
-        <span className="font-display font-bold text-sm text-[#fe5009] tracking-wide">Young</span>
+        <span className="flex items-center gap-2 font-display font-bold text-sm text-[#fe5009] tracking-wide">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3v3" /><circle cx="12" cy="2.2" r="1.1" fill="currentColor" stroke="none" /><rect x="4" y="6" width="16" height="12" rx="3" /><path d="M2 11v3" /><path d="M22 11v3" /><circle cx="9" cy="12" r="1.5" fill="currentColor" stroke="none" /><circle cx="15" cy="12" r="1.5" fill="currentColor" stroke="none" /></svg>
+          Young
+        </span>
         <div className="flex items-center gap-3 text-sm">
           <span className="text-gray-300">{perfil?.nome ?? perfil?.email}</span>
           <span className="text-[10px] uppercase tracking-wider text-gray-400 border border-[#333] rounded px-1.5 py-0.5">{perfil?.papel}</span>
