@@ -132,13 +132,33 @@ function Olho({ aberto }: { aberto: boolean }) {
   )
 }
 
-// Card de uma simulação (com a comissão escondida atrás do olhinho)
+// Número que anima de 0 até o valor (efeito Pingo Lead) quando o card aparece.
+function CountUp({ value, className }: { value: number; className?: string }) {
+  const [v, setV] = useState(0)
+  useEffect(() => {
+    let raf = 0
+    const dur = 900, t0 = performance.now()
+    const step = (t: number) => {
+      const p = Math.min(1, (t - t0) / dur)
+      setV(value * (1 - Math.pow(1 - p, 3)))
+      if (p < 1) raf = requestAnimationFrame(step)
+    }
+    raf = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(raf)
+  }, [value])
+  return <span className={className}>{brl(v)}</span>
+}
+
+// Card de uma simulação (com a comissão escondida atrás do olhinho) — estilo Pingo Lead.
 function CardSimulacao({ r, onGerarContrato }: { r: Resultado; onGerarContrato: () => void }) {
   const [verComissao, setVerComissao] = useState(false)
   const [verReforcos, setVerReforcos] = useState(false)
+  const [shown, setShown] = useState(false)
+  useEffect(() => { const id = requestAnimationFrame(() => setShown(true)); return () => cancelAnimationFrame(id) }, [])
   const temReforcos = r.reforcos.length > 0
+  const lbl = 'text-[10px] uppercase tracking-wider text-gray-500'
   return (
-    <div className="bg-[#141414] border border-[#262626] rounded-xl p-5 space-y-4">
+    <div className={`bg-[#0f1520] border border-white/[0.08] rounded-2xl p-5 space-y-4 transition-all duration-500 ${shown ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'}`}>
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="font-display text-white text-base">{r.empreendimento} · Lote {r.num_lote}</h2>
         {r.promocional && (
@@ -151,8 +171,8 @@ function CardSimulacao({ r, onGerarContrato }: { r: Resultado; onGerarContrato: 
 
       <div className="flex items-end justify-between">
         <div>
-          <p className="text-xs text-gray-500">Parcela mensal</p>
-          <p className="font-display text-3xl leading-none text-[#fe5009]">{brl(r.resumo.parcela_mensal)}</p>
+          <p className={lbl}>Parcela mensal</p>
+          <CountUp value={r.resumo.parcela_mensal} className="font-display text-4xl leading-none tracking-tight text-[#fe5009]" />
         </div>
         <p className="text-xs text-gray-500">em {r.resumo.prazo_meses}x</p>
       </div>
@@ -163,52 +183,49 @@ function CardSimulacao({ r, onGerarContrato }: { r: Resultado; onGerarContrato: 
         </p>
       )}
 
-      <div className="border-t border-[#262626] text-sm">
-        <div className="flex items-center justify-between py-2.5 border-b border-[#1e1e1e]">
-          <span className="text-gray-400">Valor à vista</span>
-          <span className="text-gray-100">{brl(r.resumo.valor_lote_av)}</span>
+      <div className="grid grid-cols-2 gap-2.5">
+        <div className="bg-[#131b28] rounded-xl p-3">
+          <p className={lbl}>Entrada</p>
+          <CountUp value={r.resumo.entrada} className="block mt-1 text-base font-semibold text-gray-100" />
         </div>
-        <div className="flex items-center justify-between py-2.5 border-b border-[#1e1e1e]">
-          <span className="text-gray-400">Entrada</span>
-          <span className="text-gray-100">{brl(r.resumo.entrada)}</span>
-        </div>
-        {temReforcos && (
-          <div className="border-b border-[#1e1e1e]">
-            <button onClick={() => setVerReforcos((v) => !v)} aria-expanded={verReforcos} className="w-full flex items-center justify-between py-2.5 text-left">
-              <span className="text-gray-400">Reforços</span>
-              <span className="text-gray-100 flex items-center gap-1.5">
-                {r.reforcos.length}× · {brl(r.resumo.total_reforcos)}
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`text-gray-500 transition-transform ${verReforcos ? 'rotate-180' : ''}`}><path d="m6 9 6 6 6-6" /></svg>
-              </span>
-            </button>
-            {verReforcos && (
-              <ul className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[11px] pb-2 max-h-24 overflow-y-auto">
-                {r.reforcos.map((x, i) => (
-                  <li key={i} className="flex items-center justify-between gap-2 tabular-nums whitespace-nowrap">
-                    <span className="text-gray-500">{x.data_str || `Mês ${x.mes}`}</span>
-                    <span className="text-gray-300">{brl(Number(x.valor))}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
-        <div className="flex items-center justify-between py-2.5">
-          <span className="text-gray-400">Custos de registro <span className="text-gray-600">(ITBI + Cartório)</span></span>
-          <span className="text-gray-100">{brl(r.resumo.itbi + r.resumo.cartorio)}</span>
+        <div className="bg-[#131b28] rounded-xl p-3">
+          <p className={lbl}>Registro <span className="normal-case tracking-normal text-gray-600">(ITBI+Cartório)</span></p>
+          <CountUp value={r.resumo.itbi + r.resumo.cartorio} className="block mt-1 text-base font-semibold text-gray-100" />
         </div>
       </div>
 
-      <div className="flex items-center justify-between bg-[#0d0d0d] border border-[#262626] rounded-lg px-3 py-2.5">
+      {temReforcos && (
+        <div className="bg-[#131b28] rounded-xl">
+          <button onClick={() => setVerReforcos((v) => !v)} aria-expanded={verReforcos} className="w-full flex items-center justify-between p-3 text-left">
+            <span className={lbl}>Reforços</span>
+            <span className="text-gray-100 flex items-center gap-1.5 text-sm">
+              {r.reforcos.length}× · {brl(r.resumo.total_reforcos)}
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`text-gray-500 transition-transform ${verReforcos ? 'rotate-180' : ''}`}><path d="m6 9 6 6 6-6" /></svg>
+            </span>
+          </button>
+          <div className={`overflow-hidden transition-all duration-300 ${verReforcos ? 'max-h-60' : 'max-h-0'}`}>
+            <ul className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[11px] px-3 pb-3 max-h-44 overflow-y-auto">
+              {r.reforcos.map((x, i) => (
+                <li key={i} className="flex items-center justify-between gap-2 tabular-nums whitespace-nowrap">
+                  <span className="text-gray-500">{x.data_str || `Mês ${x.mes}`}</span>
+                  <span className="text-gray-300">{brl(Number(x.valor))}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between bg-[#131b28] border border-white/[0.08] rounded-xl px-4 py-3">
         <span className="text-sm text-gray-300">Valor total do financiamento</span>
-        <span className="font-display text-lg text-white">{brl(r.resumo.total_pago)}</span>
+        <CountUp value={r.resumo.total_pago} className="font-display text-2xl tracking-tight text-[#26e0a3]" />
       </div>
 
       {r.promo_descricao && <p className="text-xs text-[#00bcbc]">{r.promo_descricao}</p>}
 
-      {/* Comissão (interna) — aparece acima do rodapé quando o olhinho abre */}
-      {verComissao && (
-        <div className="rounded-lg border border-[#333] bg-[#0d0d0d] p-3 text-sm space-y-1">
+      {/* Comissão (interna) — abre/fecha com transição pelo olhinho */}
+      <div className={`overflow-hidden transition-all duration-300 ${verComissao ? 'max-h-48' : 'max-h-0'}`}>
+        <div className="rounded-xl border border-white/[0.08] bg-[#131b28] p-3 text-sm space-y-1">
           <div className="flex justify-between">
             <span className="text-gray-400">Comissão (5%)</span>
             <span className="text-white">{brl(r.interno.comissao)}</span>
@@ -220,28 +237,28 @@ function CardSimulacao({ r, onGerarContrato }: { r: Resultado; onGerarContrato: 
             </div>
           )}
           {r.interno.bonus > 0 && (
-            <div className="flex justify-between border-t border-[#262626] mt-1 pt-1">
+            <div className="flex justify-between border-t border-white/[0.08] mt-1 pt-1">
               <span className="text-gray-300">Total</span>
               <span className="text-[#fe5009]">{brl(r.interno.comissao_total)}</span>
             </div>
           )}
           <p className="text-[10px] text-gray-600 pt-1">Informação interna — não faz parte da proposta ao cliente.</p>
         </div>
-      )}
+      </div>
 
-      <div className="border-t border-[#262626] pt-3 space-y-2">
+      <div className="border-t border-white/[0.08] pt-3 space-y-2">
         <div className="flex items-center justify-between">
           <button
             onClick={() => setVerComissao((v) => !v)}
             title={verComissao ? 'ocultar comissão' : 'ver comissão'}
             aria-label={verComissao ? 'ocultar comissão' : 'ver comissão'}
-            className="text-gray-500 hover:text-white"
+            className="text-gray-500 hover:text-white transition-colors"
           >
             <Olho aberto={verComissao} />
           </button>
           <button
             onClick={onGerarContrato}
-            className="text-sm text-[#fe5009] hover:text-orange-400 font-medium whitespace-nowrap"
+            className="text-sm text-[#fe5009] hover:text-orange-400 font-medium whitespace-nowrap transition-colors"
           >
             Gerar contrato →
           </button>
@@ -399,13 +416,13 @@ export default function Simulador() {
   }
 
   const campo =
-    'w-full bg-[#0d0d0d] border border-[#333] rounded-lg px-2.5 py-1.5 text-white text-sm placeholder:text-gray-600 focus:border-[#fe5009] focus:outline-none'
+    'w-full bg-[#0b111b] border border-white/[0.08] rounded-lg px-2.5 py-1.5 text-white text-sm placeholder:text-gray-600 focus:border-[#fe5009] focus:outline-none transition-colors'
   const label = 'block text-[11px] font-medium text-gray-400 mb-1'
 
   return (
     <div className="space-y-4 max-w-6xl mx-auto">
       {/* ---- Barra de simulação (horizontal) ---- */}
-      <div className="bg-[#141414] border border-[#262626] rounded-xl p-4 space-y-3">
+      <div className="bg-[#0f1520] border border-white/[0.08] rounded-2xl p-4 space-y-3">
         <div className="flex flex-wrap items-end gap-x-3 gap-y-3">
           <div className="w-52">
             <label className={label}>Empreendimento</label>
@@ -562,7 +579,7 @@ export default function Simulador() {
 
       {/* ---- Confirmação ---- */}
       {confirmacao && (
-        <div className="bg-[#141414] border border-yellow-500/40 rounded-xl p-5 space-y-4 max-w-xl">
+        <div className="bg-[#0f1520] border border-yellow-500/40 rounded-2xl p-5 space-y-4 max-w-xl">
           <div className="flex items-center gap-2">
             <span className="text-yellow-400 text-xl">⚠️</span>
             <span className="font-display text-white text-base">Lote não está disponível</span>
@@ -579,7 +596,7 @@ export default function Simulador() {
 
       {/* ---- Resultados (grade) ---- */}
       {resultados.length === 0 && !confirmacao && (
-        <div className="bg-[#141414] border border-dashed border-[#2a2a2a] rounded-xl p-8 text-center text-gray-500 text-sm">
+        <div className="bg-[#0f1520] border border-dashed border-white/[0.12] rounded-2xl p-8 text-center text-gray-500 text-sm">
           Preencha os dados e clique em <span className="text-gray-300 mx-1">Simular</span> para ver a proposta.
         </div>
       )}
