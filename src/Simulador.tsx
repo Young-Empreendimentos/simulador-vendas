@@ -514,11 +514,11 @@ export default function Simulador() {
   const label = 'block text-[11px] font-medium text-gray-400 mb-1'
 
   return (
-    <div className="space-y-4 max-w-6xl mx-auto">
+    <div className="space-y-4 max-w-5xl mx-auto">
       {/* ---- Barra de simulação (horizontal) ---- */}
       <div className="bg-[#0f1520] border border-white/[0.08] rounded-2xl p-4 space-y-3 shadow-xl shadow-black/20">
         <div className="flex flex-wrap items-end gap-x-3 gap-y-3">
-          <div className="w-52">
+          <div className="w-full sm:w-52">
             <label className={label}>Empreendimento</label>
             <Dropdown
               ariaLabel="Empreendimento"
@@ -541,7 +541,7 @@ export default function Simulador() {
             <input className={campo} type="number" value={prazo} onChange={(e) => setPrazo(e.target.value)} placeholder="parc." />
           </div>
 
-          <div className="w-px self-stretch bg-[#262626] mx-1" />
+          <div className="hidden sm:block w-px self-stretch bg-[#262626] mx-1" />
 
           {/* opções na mesma linha (alinhadas à base dos campos) */}
           <div className="flex items-center flex-wrap gap-x-4 gap-y-1 h-[34px] text-sm">
@@ -571,7 +571,7 @@ export default function Simulador() {
           <button
             onClick={() => simular(false)}
             disabled={carregando}
-            className="btn-shine ml-auto self-end inline-flex items-center justify-center gap-2 min-w-[7.5rem] bg-gradient-to-b from-[#ff6a25] to-[#fe5009] hover:from-[#ff7a3a] hover:to-[#ff5a15] text-white font-semibold px-6 py-2 rounded-xl shadow-lg shadow-[#fe5009]/25 hover:shadow-[#fe5009]/40 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.97] disabled:opacity-60 disabled:translate-y-0 disabled:cursor-wait transition-all duration-200"
+            className="btn-shine w-full sm:w-auto sm:ml-auto self-end inline-flex items-center justify-center gap-2 min-w-[7.5rem] bg-gradient-to-b from-[#ff6a25] to-[#fe5009] hover:from-[#ff7a3a] hover:to-[#ff5a15] text-white font-semibold px-6 py-2 rounded-xl shadow-lg shadow-[#fe5009]/25 hover:shadow-[#fe5009]/40 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.97] disabled:opacity-60 disabled:translate-y-0 disabled:cursor-wait transition-all duration-200"
           >
             {carregando ? (
               <>
@@ -596,7 +596,7 @@ export default function Simulador() {
             {prazoN < 1 ? (
               <p className="text-xs text-gray-500">Defina o <span className="text-gray-300">prazo</span> para gerar os reforços.</p>
             ) : (
-              <>
+              <div className="max-w-2xl space-y-3">
                 {/* Gerador: valor + frequência (+ 1ª data). Preenche a lista até a última parcela. */}
                 <div className="flex flex-wrap items-end gap-3">
                   <div className="w-32">
@@ -639,7 +639,7 @@ export default function Simulador() {
 
                 {/* Lista editável — no mesmo espírito das parcelas */}
                 {reforcos.length > 0 ? (
-                  <div className="rounded-lg border border-[#262626] overflow-hidden">
+                  <div className="max-w-md rounded-lg border border-[#262626] overflow-hidden">
                     <div className="grid grid-cols-[1fr_1fr_auto] gap-px bg-[#262626] text-[10px] text-gray-500 uppercase tracking-wide">
                       <span className="bg-[#0d0d0d] px-3 py-1.5">Data</span>
                       <span className="bg-[#0d0d0d] px-3 py-1.5">Valor</span>
@@ -675,7 +675,7 @@ export default function Simulador() {
                     <button type="button" onClick={addReforco} className="text-xs text-[#fe5009] hover:text-orange-400 font-medium whitespace-nowrap">+ adicionar manualmente</button>
                   </div>
                 )}
-              </>
+              </div>
             )}
           </div>
         )}
