@@ -94,8 +94,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signInGoogle = async () => {
     await supabase.auth.signInWithOAuth({
       provider: 'google',
-      // volta para o app sob a base do Pages (/simulador-vendas/)
-      options: { redirectTo: window.location.origin + import.meta.env.BASE_URL },
+      // volta para a URL atual (funciona no domínio próprio e no /simulador-vendas/
+      // do GitHub Pages). Precisa estar na allowlist de Redirect URLs do Supabase.
+      options: { redirectTo: window.location.origin + window.location.pathname },
     })
   }
   const signOut = async () => {
