@@ -108,7 +108,16 @@ const brl = (n: number) =>
   n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
 function paramsIniciais() {
-  const p = new URLSearchParams(window.location.search)
+  // Deep-link do Lotfinder (?empreendimento=&lote=). Se a pessoa logou no meio do
+  // caminho, o redirect do OAuth descarta a query — recuperamos o que foi guardado
+  // em sessionStorage antes do login (ver signInGoogle em auth.tsx).
+  let p = new URLSearchParams(window.location.search)
+  if (!p.get('empreendimento') && !p.get('lote')) {
+    try {
+      const salvo = sessionStorage.getItem('sim_prefill')
+      if (salvo) { p = new URLSearchParams(salvo); sessionStorage.removeItem('sim_prefill') }
+    } catch { /* sessionStorage indisponível */ }
+  }
   const emp = p.get('empreendimento') ?? ''
   const empMatch = EMPREENDIMENTOS.find(
     (e) => e.toLowerCase() === emp.toLowerCase(),

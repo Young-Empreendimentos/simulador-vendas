@@ -92,6 +92,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const signInGoogle = async () => {
+    // Preserva o deep-link do Lotfinder (?empreendimento=&lote=) através do redirect
+    // do OAuth, que descarta a query. O Simulador recupera isso em paramsIniciais.
+    try {
+      if (/empreendimento=|lote=/.test(window.location.search)) {
+        sessionStorage.setItem('sim_prefill', window.location.search)
+      }
+    } catch { /* sessionStorage indisponível */ }
     await supabase.auth.signInWithOAuth({
       provider: 'google',
       // volta para a URL atual (funciona no domínio próprio e no /simulador-vendas/
