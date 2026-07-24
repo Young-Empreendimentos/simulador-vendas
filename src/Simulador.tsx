@@ -58,14 +58,22 @@ function hojeMaisMesesISO(n: number): string {
 
 // Série recorrente: a partir de inicioISO, a cada `freq` meses, enquanto o mês
 // (em relação a hoje) for >= 1 e <= ateMes (padrão: a última parcela).
-function serieDatas(inicioISO: string, freq: number, ateMes: number): string[] {
+// Se maxQtd > 0, gera exatamente essa quantidade de reforços (ignora ateMes);
+// senão, preenche até o mês `ateMes` (padrão: a última parcela).
+function serieDatas(inicioISO: string, freq: number, ateMes: number, maxQtd = 0): string[] {
   const out: string[] = []
-  if (!inicioISO || freq <= 0 || ateMes < 1) return out
+  if (!inicioISO || freq <= 0) return out
+  if (maxQtd <= 0 && ateMes < 1) return out
   for (let k = 0; k < 600; k++) {
     const iso = addMesesISO(inicioISO, k * freq)
     const m = mesesDeHoje(iso)
-    if (m > ateMes) break
-    if (m >= 1) out.push(iso)
+    if (maxQtd > 0) {
+      if (m >= 1) out.push(iso)
+      if (out.length >= maxQtd) break
+    } else {
+      if (m > ateMes) break
+      if (m >= 1) out.push(iso)
+    }
   }
   return out
 }
@@ -402,6 +410,8 @@ export default function Simulador() {
   const [gFreq, setGFreq] = useState('12')                    // '12'|'6'|'3'|'custom'
   const [gFreqN, setGFreqN] = useState('')                    // "a cada N meses"
   const [gData, setGData] = useState('')                      // 1ª data (opcional)
+  const [gModo, setGModo] = useState<'fim' | 'qtd'>('fim')    // gerar até o fim OU quantidade fixa
+  const [gQtd, setGQtd] = useState('')                        // quantos reforços (modo 'qtd')
   const [reforcosAberto, setReforcosAberto] = useState(false)
   const [promocional, setPromocional] = useState(false)
   const [precoCustomizado, setPrecoCustomizado] = useState(false)
@@ -465,11 +475,13 @@ export default function Simulador() {
   useEffect(() => {
     if (reforcosManual) return
     const valor = parseBRL(gValor)
-    if (valor <= 0 || gFreqMeses <= 0 || fimContrato < 1) { setReforcos([]); return }
+    const nQtd = gModo === 'qtd' ? (Number(gQtd) || 0) : 0
+    const ok = valor > 0 && gFreqMeses > 0 && (gModo === 'qtd' ? nQtd > 0 : fimContrato >= 1)
+    if (!ok) { setReforcos([]); return }
     const inicio = gData || hojeMaisMesesISO(gFreqMeses) // 1ª data padrão = hoje + frequência
-    const itens = serieDatas(inicio, gFreqMeses, fimContrato).map((data, i) => ({ id: `auto-${i}`, data, valor }))
+    const itens = serieDatas(inicio, gFreqMeses, fimContrato, nQtd).map((data, i) => ({ id: `auto-${i}`, data, valor }))
     setReforcos(itens)
-  }, [gValor, gFreqMeses, gData, fimContrato, reforcosManual])
+  }, [gValor, gFreqMeses, gData, fimContrato, reforcosManual, gModo, gQtd])
 
   function editReforco(id: string, patch: Partial<Reforco>) {
     setReforcosManual(true)
@@ -661,15 +673,32 @@ export default function Simulador() {
                         </div>
                       )}
                       <div>
+                        <label className={label}>Gerar</label>
+                        <div className="flex gap-1 bg-[#0b111b] border border-white/[0.07] rounded-lg p-0.5">
+                          <button type="button" onClick={() => setGModo('fim')} className={`flex-1 text-xs px-2 py-1.5 rounded-md transition-colors ${gModo === 'fim' ? 'bg-[#fe5009] text-white' : 'text-gray-400 hover:text-white'}`}>Até o fim do contrato</button>
+                          <button type="button" onClick={() => setGModo('qtd')} className={`flex-1 text-xs px-2 py-1.5 rounded-md transition-colors ${gModo === 'qtd' ? 'bg-[#fe5009] text-white' : 'text-gray-400 hover:text-white'}`}>Quantidade</button>
+                        </div>
+                      </div>
+                      {gModo === 'qtd' && (
+                        <div>
+                          <label className={label}>Quantos reforços</label>
+                          <input className={campo} type="number" min="1" value={gQtd} onChange={(e) => setGQtd(e.target.value)} placeholder="ex: 5" />
+                        </div>
+                      )}
+                      <div>
                         <label className={label}>1ª data <span className="text-gray-600">(opcional)</span></label>
                         <input className={campo} type="date" value={gData} onChange={(e) => setGData(e.target.value)} />
                       </div>
                       {reforcosManual && parseBRL(gValor) > 0 && gFreqMeses > 0 && (
-                        <button type="button" onClick={regerar} className="text-xs text-gray-400 hover:text-[#fe5009] underline underline-offset-2 whitespace-nowrap" title="Descarta as edições e regenera a série a partir do valor e da frequência acima">↺ Regerar até o fim</button>
+                        <button type="button" onClick={regerar} className="text-xs text-gray-400 hover:text-[#fe5009] underline underline-offset-2 whitespace-nowrap" title="Descarta as edições e regenera a série pelo gerador acima">↺ Regerar</button>
                       )}
 
                       <p className="text-[11px] text-gray-600">
-                        Preenchido automaticamente até a <span className="text-gray-400">última parcela (mês {prazoN})</span>. Edite as datas e os valores como quiser — dá pra marcar até 6 meses depois do fim (mês {teto}).
+                        {gModo === 'qtd' ? (
+                          <>Gera <span className="text-gray-400">{Number(gQtd) || 0} reforço(s)</span> a partir da 1ª data, na frequência escolhida. Edite as datas e os valores como quiser — cada um pode ir até 6 meses depois do fim (mês {teto}).</>
+                        ) : (
+                          <>Preenchido automaticamente até a <span className="text-gray-400">última parcela (mês {prazoN})</span>. Edite as datas e os valores como quiser — dá pra marcar até 6 meses depois do fim (mês {teto}).</>
+                        )}
                       </p>
 
                       {/* Lista editável — no mesmo espírito das parcelas */}
@@ -706,7 +735,7 @@ export default function Simulador() {
                         </div>
                       ) : (
                         <div className="flex items-center gap-3">
-                          <p className="text-xs text-gray-600">Informe o valor e a frequência acima para gerar os reforços.</p>
+                          <p className="text-xs text-gray-600">Informe o valor, a frequência{gModo === 'qtd' ? ' e a quantidade' : ''} acima para gerar os reforços.</p>
                           <button type="button" onClick={addReforco} className="text-xs text-[#fe5009] hover:text-orange-400 font-medium whitespace-nowrap">+ manual</button>
                         </div>
                       )}
