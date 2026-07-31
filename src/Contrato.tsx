@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from './lib/supabase'
 import { useAuth } from './auth'
 
@@ -13,6 +13,7 @@ export type SimParaContrato = {
     prazo_meses: number
     itbi: number
     cartorio: number
+    total_parcelas: number
   }
   reforcos: { mes: number; valor: string; data_str: string }[]
 }
@@ -241,7 +242,8 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
   const [temC2, setTemC2] = useState(false)
   const [c2, setC2] = useState<Pessoa>(pessoaVazia)
   const [dataEntrada, setDataEntrada] = useState(hojeISO())
-  const [diaVenc, setDiaVenc] = useState('10') // dia do mês do 1º vencimento (à prazo)
+  const [dataPrimParcela, setDataPrimParcela] = useState(() => vencimentoISO(hojeISO(), 10)) // data da 1ª parcela (à prazo) — editável
+  const [parcelaManual, setParcelaManual] = useState(false) // usuário editou a data da 1ª parcela?
   const [temCorretor, setTemCorretor] = useState(false)
   const [corretorBusca, setCorretorBusca] = useState('')
   const [bonus, setBonus] = useState('')
@@ -252,6 +254,12 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
   const [res, setRes] = useState<Resposta | null>(null)
   const [linkDoc, setLinkDoc] = useState<string | null>(null)
   const [tentou, setTentou] = useState(false) // já tentou pré-visualizar/gerar? (marca obrigatórios vazios)
+
+  // Enquanto o vendedor não mexer na data da 1ª parcela, ela acompanha a entrada
+  // (dia 10 do mês seguinte). Se ele escolher outra data, respeita a escolha.
+  useEffect(() => {
+    if (!parcelaManual && dataEntrada) setDataPrimParcela(vencimentoISO(dataEntrada, 10))
+  }, [dataEntrada, parcelaManual])
 
   function montarBody(gerar: boolean): Record<string, unknown> {
     const body: Record<string, unknown> = {
@@ -264,9 +272,10 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
       prazo_meses: sim.resumo.prazo_meses,
       itbi: sim.resumo.itbi,
       cartorio: sim.resumo.cartorio,
+      total_parcelas: sim.resumo.total_parcelas,
       reforcos: sim.reforcos.map((r) => ({ valor: Number(r.valor), data_str: r.data_str })),
       data_entrada: brDate(dataEntrada),
-      data_primeiro_vencimento: tipo === 'aprazo' ? brDate(vencimentoISO(dataEntrada, Number(diaVenc))) : '',
+      data_primeiro_vencimento: tipo === 'aprazo' ? brDate(dataPrimParcela) : '',
       Qualificacao_Clientes: temC2 ? `${qualificar(c1, true)}\n${qualificar(c2, true)}` : qualificar(c1, false),
       Comprador1: c1.nome.trim(),
       Comprador2: temC2 ? c2.nome.trim() : '',
@@ -301,7 +310,10 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
     if (temCorretor && !corretorBusca.trim()) probs.push('Informe o CPF/CNPJ ou nome do corretor.')
     if (!dataEntrada) probs.push('Informe a data da entrada.')
     else if (dataEntrada < hojeISO() || dataEntrada > hojeMaisDiasISO(7)) probs.push('Data da entrada deve ser entre hoje e 7 dias (regra da Young).')
-    if (tipo === 'aprazo' && !(Number(diaVenc) >= 1 && Number(diaVenc) <= 31)) probs.push('Informe o dia do vencimento das parcelas (1 a 31).')
+    if (tipo === 'aprazo') {
+      if (!dataPrimParcela) probs.push('Informe a data da 1ª parcela.')
+      else if (dataPrimParcela <= dataEntrada) probs.push('A data da 1ª parcela deve ser depois da entrada.')
+    }
     return probs.length ? probs.join('\n') : null
   }
 
@@ -359,7 +371,7 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
             <div><p className="text-gray-500 text-[11px]">Valor à vista</p><p className="text-white">{brl(r.valor_lote_av)}</p></div>
             <div><p className="text-gray-500 text-[11px]">Entrada</p><p className="text-white">{brl(r.entrada)}</p></div>
-            <div><p className="text-gray-500 text-[11px]">Parcelas</p><p className="text-white">{r.prazo_meses}x {brl(r.parcela_mensal)}</p></div>
+            <div><p className="text-gray-500 text-[11px]">Parcelas</p><p className="text-white">{r.prazo_meses}x {brl(r.parcela_mensal)}{tipo === 'aprazo' && r.prazo_meses > 1 && Math.abs((r.total_parcelas - r.parcela_mensal * (r.prazo_meses - 1)) - r.parcela_mensal) >= 0.005 ? <span className="text-gray-500 text-[11px]"> · última {brl(Math.round((r.total_parcelas - r.parcela_mensal * (r.prazo_meses - 1)) * 100) / 100)}</span> : null}</p></div>
             <div><p className="text-gray-500 text-[11px]">ITBI + Cartório</p><p className="text-white">{brl(r.itbi + r.cartorio)}</p></div>
           </div>
         </div>
@@ -404,9 +416,9 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
             </div>
             {tipo === 'aprazo' && (
               <div>
-                <label className={label}>Dia do 1º vencimento</label>
-                <input type="number" min={1} max={31} className={campo + (!(Number(diaVenc) >= 1 && Number(diaVenc) <= 31) ? ' border-red-500/60' : '')} value={diaVenc} onChange={(e) => setDiaVenc(e.target.value)} placeholder="ex: 10" />
-                {vencimentoISO(dataEntrada, Number(diaVenc)) && <p className="text-[11px] text-gray-500 mt-1">1ª parcela em {brDate(vencimentoISO(dataEntrada, Number(diaVenc)))}</p>}
+                <label className={label}>Data da 1ª parcela</label>
+                <input type="date" min={dataEntrada || hojeISO()} className={campo + (dataPrimParcela && dataPrimParcela <= dataEntrada ? ' border-red-500/60' : '')} value={dataPrimParcela} onChange={(e) => { setParcelaManual(true); setDataPrimParcela(e.target.value) }} />
+                <p className="text-[11px] text-gray-500 mt-1">Pode ficar depois dos reforços (ex: entrada em reforços até dez., 1ª parcela em jan.).</p>
               </div>
             )}
           </div>
