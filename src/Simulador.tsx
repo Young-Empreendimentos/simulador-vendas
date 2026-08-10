@@ -853,7 +853,7 @@ export default function Simulador() {
       </div>
 
       {contratoSim && (
-        <Contrato sim={contratoSim} onClose={() => setContratoSim(null)} />
+        <Contrato sim={{ ...contratoSim, bonus: contratoSim.interno.bonus }} onClose={() => setContratoSim(null)} />
       )}
     </>
   )

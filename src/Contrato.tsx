@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react'
 import { supabase } from './lib/supabase'
-import { useAuth } from './auth'
 
 // Tipo mínimo da simulação escolhida
 export type SimParaContrato = {
   empreendimento: string
   num_lote: string
   avista?: boolean
+  bonus?: number   // bônus da comissão, herdado da simulação (não se digita de novo no contrato)
   resumo: {
     valor_lote_av: number
     entrada: number
@@ -233,8 +233,6 @@ type Resposta = {
 }
 
 export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClose: () => void }) {
-  const { perfil } = useAuth()
-
   // O tipo é definido na SIMULAÇÃO (à vista sai da simulação à vista). Aqui é só reflexo.
   const tipo: 'aprazo' | 'avista' = sim.avista ? 'avista' : 'aprazo'
   const [c1, setC1] = useState<Pessoa>(pessoaVazia)
@@ -245,7 +243,6 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
   const [parcelaManual, setParcelaManual] = useState(false) // usuário editou a data da 1ª parcela?
   const [temCorretor, setTemCorretor] = useState(false)
   const [corretorBusca, setCorretorBusca] = useState('')
-  const [bonus, setBonus] = useState('')
 
   const [carregando, setCarregando] = useState(false)
   const [gerando, setGerando] = useState(false)
@@ -282,7 +279,8 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
       gerar,
     }
     if (temCorretor) body.corretor_busca = corretorBusca.trim()
-    if (temCorretor && perfil?.pode_bonificar) body.bonus_comissao = Number(bonus) || 0
+    // Bônus herdado da simulação (não é redigitado aqui). Só entra no contrato com corretor.
+    if (temCorretor) body.bonus_comissao = Number(sim.bonus) || 0
     return body
   }
 
@@ -447,11 +445,8 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
                 <label className={label}>Corretor — CPF/CNPJ ou nome {req}</label>
                 <input className={campo} value={corretorBusca} onChange={(e) => setCorretorBusca(e.target.value)} placeholder="ex: 026.996.530-04 ou João da Silva" />
               </div>
-              {perfil?.pode_bonificar && (
-                <div className="w-40">
-                  <label className={label}>Bônus na comissão (R$)</label>
-                  <input className={campo} type="number" value={bonus} onChange={(e) => setBonus(e.target.value)} placeholder="opcional" />
-                </div>
+              {(sim.bonus ?? 0) > 0 && (
+                <div className="w-full text-[11px] text-gray-400">Bônus da simulação: <span className="text-gray-200">{brl(sim.bonus ?? 0)}</span> — aplicado nos honorários do corretor.</div>
               )}
             </div>
           )}
