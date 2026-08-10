@@ -6,6 +6,7 @@ import { useAuth } from './auth'
 export type SimParaContrato = {
   empreendimento: string
   num_lote: string
+  avista?: boolean
   resumo: {
     valor_lote_av: number
     entrada: number
@@ -237,7 +238,8 @@ type Resposta = {
 export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClose: () => void }) {
   const { perfil } = useAuth()
 
-  const [tipo, setTipo] = useState<'aprazo' | 'avista'>('aprazo')
+  // O tipo é definido na SIMULAÇÃO (à vista sai da simulação à vista). Aqui é só reflexo.
+  const tipo: 'aprazo' | 'avista' = sim.avista ? 'avista' : 'aprazo'
   const [c1, setC1] = useState<Pessoa>(pessoaVazia)
   const [temC2, setTemC2] = useState(false)
   const [c2, setC2] = useState<Pessoa>(pessoaVazia)
@@ -370,9 +372,18 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
           <p className={label + ' mb-2'}>Resumo da simulação</p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
             <div><p className="text-gray-500 text-[11px]">Valor à vista</p><p className="text-white">{brl(r.valor_lote_av)}</p></div>
-            <div><p className="text-gray-500 text-[11px]">Entrada</p><p className="text-white">{brl(r.entrada)}</p></div>
-            <div><p className="text-gray-500 text-[11px]">Parcelas</p><p className="text-white">{r.prazo_meses}x {brl(r.parcela_mensal)}{tipo === 'aprazo' && r.prazo_meses > 1 && Math.abs((r.total_parcelas - r.parcela_mensal * (r.prazo_meses - 1)) - r.parcela_mensal) >= 0.005 ? <span className="text-gray-500 text-[11px]"> · última {brl(Math.round((r.total_parcelas - r.parcela_mensal * (r.prazo_meses - 1)) * 100) / 100)}</span> : null}</p></div>
-            <div><p className="text-gray-500 text-[11px]">ITBI + Cartório</p><p className="text-white">{brl(r.itbi + r.cartorio)}</p></div>
+            {tipo === 'avista' ? (
+              <>
+                <div><p className="text-gray-500 text-[11px]">ITBI + Cartório</p><p className="text-white">{brl(r.itbi + r.cartorio)}</p></div>
+                <div className="sm:col-span-2"><p className="text-gray-500 text-[11px]">Total à vista</p><p className="text-white">{brl(r.valor_lote_av + r.itbi + r.cartorio)}</p></div>
+              </>
+            ) : (
+              <>
+                <div><p className="text-gray-500 text-[11px]">Entrada</p><p className="text-white">{brl(r.entrada)}</p></div>
+                <div><p className="text-gray-500 text-[11px]">Parcelas</p><p className="text-white">{r.prazo_meses}x {brl(r.parcela_mensal)}{r.prazo_meses > 1 && Math.abs((r.total_parcelas - r.parcela_mensal * (r.prazo_meses - 1)) - r.parcela_mensal) >= 0.005 ? <span className="text-gray-500 text-[11px]"> · última {brl(Math.round((r.total_parcelas - r.parcela_mensal * (r.prazo_meses - 1)) * 100) / 100)}</span> : null}</p></div>
+                <div><p className="text-gray-500 text-[11px]">ITBI + Cartório</p><p className="text-white">{brl(r.itbi + r.cartorio)}</p></div>
+              </>
+            )}
           </div>
         </div>
 
@@ -380,13 +391,12 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
           Matrícula, área, ônus, vendedora, dados bancários e corretor são buscados automaticamente no sistema. Preencha só o que segue:
         </p>
 
-        {/* Tipo */}
+        {/* Tipo (definido na simulação) */}
         <div>
           <p className={label}>Tipo de contrato</p>
-          <div className="flex rounded-lg border border-[#333] overflow-hidden text-sm w-56">
-            <button type="button" onClick={() => setTipo('aprazo')} className={`flex-1 py-1.5 ${tipo === 'aprazo' ? 'bg-[#fe5009] text-white' : 'text-gray-400'}`}>À prazo</button>
-            <button type="button" onClick={() => setTipo('avista')} className={`flex-1 py-1.5 ${tipo === 'avista' ? 'bg-[#fe5009] text-white' : 'text-gray-400'}`}>À vista</button>
-          </div>
+          <span className={`inline-block text-sm px-3 py-1.5 rounded-lg border ${tipo === 'avista' ? 'border-[#26e0a3]/40 text-[#26e0a3] bg-[#26e0a3]/10' : 'border-[#fe5009]/40 text-[#fe5009] bg-[#fe5009]/10'}`}>
+            {tipo === 'avista' ? 'À vista (pagamento único)' : 'À prazo (financiamento)'}
+          </span>
         </div>
 
         {/* Compradores — campo a campo (a qualificação é montada automaticamente) */}

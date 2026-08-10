@@ -102,6 +102,7 @@ type Resultado = {
   sucesso: true
   empreendimento: string
   num_lote: string
+  avista?: boolean
   promocional: boolean
   promo_descricao: string | null
   autonomia_aplicada: boolean
@@ -294,15 +295,25 @@ function CardSimulacao({ r, onGerarContrato }: { r: Resultado; onGerarContrato: 
         {r.autonomia_aplicada && (
           <span className="text-[10px] uppercase tracking-wide text-[#004ebf] border border-[#004ebf]/40 rounded px-1.5 py-0.5">Autonomia</span>
         )}
+        {r.avista && (
+          <span className="text-[10px] uppercase tracking-wide text-[#26e0a3] border border-[#26e0a3]/40 rounded px-1.5 py-0.5">À vista</span>
+        )}
       </div>
 
-      <div className="flex items-end justify-between">
+      {r.avista ? (
         <div>
-          <p className={lbl}>Parcela mensal</p>
-          <CountUp value={r.resumo.parcela_mensal} className="font-display text-4xl leading-none tracking-tight text-[#fe5009]" />
+          <p className={lbl}>Valor à vista</p>
+          <CountUp value={r.resumo.valor_lote_av} className="font-display text-4xl leading-none tracking-tight text-[#fe5009]" />
         </div>
-        <p className="text-xs text-gray-500">em {r.resumo.prazo_meses}x</p>
-      </div>
+      ) : (
+        <div className="flex items-end justify-between">
+          <div>
+            <p className={lbl}>Parcela mensal</p>
+            <CountUp value={r.resumo.parcela_mensal} className="font-display text-4xl leading-none tracking-tight text-[#fe5009]" />
+          </div>
+          <p className="text-xs text-gray-500">em {r.resumo.prazo_meses}x</p>
+        </div>
+      )}
 
       {!r.disponivel && r.status_lote && (
         <p className="text-xs text-yellow-300 bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-3 py-2">
@@ -311,11 +322,13 @@ function CardSimulacao({ r, onGerarContrato }: { r: Resultado; onGerarContrato: 
       )}
 
       <div className="grid grid-cols-2 gap-2.5">
-        <div className="bg-[#131b28] rounded-xl p-3">
-          <p className={lbl}>Entrada</p>
-          <CountUp value={r.resumo.entrada} className="block mt-1 text-base font-semibold text-gray-100" />
-        </div>
-        <div className="bg-[#131b28] rounded-xl p-3">
+        {!r.avista && (
+          <div className="bg-[#131b28] rounded-xl p-3">
+            <p className={lbl}>Entrada</p>
+            <CountUp value={r.resumo.entrada} className="block mt-1 text-base font-semibold text-gray-100" />
+          </div>
+        )}
+        <div className={`bg-[#131b28] rounded-xl p-3 ${r.avista ? 'col-span-2' : ''}`}>
           <p className={lbl}>Registro <span className="normal-case tracking-normal text-gray-600">(ITBI+Cartório)</span></p>
           <CountUp value={r.resumo.itbi + r.resumo.cartorio} className="block mt-1 text-base font-semibold text-gray-100" />
         </div>
@@ -344,7 +357,7 @@ function CardSimulacao({ r, onGerarContrato }: { r: Resultado; onGerarContrato: 
       )}
 
       <div className="flex items-center justify-between bg-[#131b28] border border-white/[0.08] rounded-xl px-4 py-3">
-        <span className="text-sm text-gray-300">Valor total do financiamento</span>
+        <span className="text-sm text-gray-300">{r.avista ? 'Valor total à vista' : 'Valor total do financiamento'}</span>
         <CountUp value={r.resumo.total_pago} className="font-display text-2xl tracking-tight text-[#26e0a3]" />
       </div>
 
@@ -402,6 +415,7 @@ export default function Simulador() {
 
   const [empreendimento, setEmpreendimento] = useState(inicial.empreendimento)
   const [numLote, setNumLote] = useState(inicial.lote)
+  const [tipoVenda, setTipoVenda] = useState<'aprazo' | 'avista'>('aprazo')
   const [entrada, setEntrada] = useState('')
   const [prazo, setPrazo] = useState('')
   const [reforcos, setReforcos] = useState<Reforco[]>([])
@@ -509,18 +523,22 @@ export default function Simulador() {
     if (!empreendimento) return setErro('Selecione o empreendimento.')
     if (!numLote.trim()) return setErro('Informe o número do lote.')
 
+    const avista = tipoVenda === 'avista'
     const body: Record<string, unknown> = {
       empreendimento,
       num_lote: numLote.trim(),
-      entrada: Number(entrada) || 0,
-      promocional: semPromo ? false : promocional,
+      entrada: avista ? 0 : (Number(entrada) || 0),
+      promocional: avista ? false : (semPromo ? false : promocional),
       preco_customizado: precoCustomizado,
+      avista,
       confirmar: confirmarFlag,
     }
     if (precoCustomizado) body.valor_lote = Number(valorCustom) || 0
     if (perfil?.pode_bonificar) body.bonus = Number(bonus) || 0
-    body.prazo_meses = Number(prazo) || 0
-    body.reforcos = listaReforcos.map(({ mes, valor, data_str }) => ({ mes, valor, data_str }))
+    if (!avista) {
+      body.prazo_meses = Number(prazo) || 0
+      body.reforcos = listaReforcos.map(({ mes, valor, data_str }) => ({ mes, valor, data_str }))
+    }
 
     setCarregando(true)
     try {
@@ -573,6 +591,12 @@ export default function Simulador() {
               <h2 className="font-display text-white text-sm">Nova simulação</h2>
             </div>
 
+            {/* Tipo de venda: à prazo (financiamento) ou à vista (pagamento único) */}
+            <div className="flex gap-1 bg-[#0b111b] border border-white/[0.07] rounded-lg p-0.5">
+              <button type="button" onClick={() => setTipoVenda('aprazo')} className={`flex-1 text-xs px-2 py-2 rounded-md transition-colors ${tipoVenda === 'aprazo' ? 'bg-[#fe5009] text-white' : 'text-gray-400 hover:text-white'}`}>À prazo</button>
+              <button type="button" onClick={() => setTipoVenda('avista')} className={`flex-1 text-xs px-2 py-2 rounded-md transition-colors ${tipoVenda === 'avista' ? 'bg-[#fe5009] text-white' : 'text-gray-400 hover:text-white'}`}>À vista</button>
+            </div>
+
             {/* Campos principais */}
             <div>
               <label className={label}>Empreendimento</label>
@@ -591,29 +615,41 @@ export default function Simulador() {
                 />
               )}
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            {tipoVenda === 'aprazo' ? (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={label}>Lote</label>
+                    <input className={campo} value={numLote} onChange={(e) => setNumLote(e.target.value)} placeholder="nº" />
+                  </div>
+                  <div>
+                    <label className={label}>Prazo</label>
+                    <input className={campo} type="number" value={prazo} onChange={(e) => setPrazo(e.target.value)} placeholder="parcelas" />
+                  </div>
+                </div>
+                <div>
+                  <label className={label}>Entrada</label>
+                  <input className={campo} type="number" value={entrada} onChange={(e) => setEntrada(e.target.value)} placeholder="R$" />
+                </div>
+              </>
+            ) : (
               <div>
                 <label className={label}>Lote</label>
                 <input className={campo} value={numLote} onChange={(e) => setNumLote(e.target.value)} placeholder="nº" />
+                <p className="text-[11px] text-gray-500 mt-1">Pagamento único — sem entrada, parcelas ou reforços.</p>
               </div>
-              <div>
-                <label className={label}>Prazo</label>
-                <input className={campo} type="number" value={prazo} onChange={(e) => setPrazo(e.target.value)} placeholder="parcelas" />
-              </div>
-            </div>
-            <div>
-              <label className={label}>Entrada</label>
-              <input className={campo} type="number" value={entrada} onChange={(e) => setEntrada(e.target.value)} placeholder="R$" />
-            </div>
+            )}
 
             {/* Condições */}
-            <div className="flex items-center gap-2 pt-1">
-              <span className="h-px flex-1 bg-white/[0.08]" />
-              <span className="text-[10px] uppercase tracking-wider text-gray-500">Condições</span>
-              <span className="h-px flex-1 bg-white/[0.08]" />
-            </div>
+            {(tipoVenda === 'aprazo' || podeAutonomia || perfil?.pode_bonificar) && (
+              <div className="flex items-center gap-2 pt-1">
+                <span className="h-px flex-1 bg-white/[0.08]" />
+                <span className="text-[10px] uppercase tracking-wider text-gray-500">Condições</span>
+                <span className="h-px flex-1 bg-white/[0.08]" />
+              </div>
+            )}
 
-            <Toggle on={promocional} onChange={setPromocional} label="Promoção" />
+            {tipoVenda === 'aprazo' && <Toggle on={promocional} onChange={setPromocional} label="Promoção" />}
             {podeAutonomia && (
               <>
                 <Toggle on={precoCustomizado} onChange={setPrecoCustomizado} label="Autonomia" hint="(preço custom.)" />
@@ -629,7 +665,8 @@ export default function Simulador() {
               </div>
             )}
 
-            {/* Reforços — seção própria colapsável */}
+            {/* Reforços (só à prazo) — seção própria colapsável */}
+            {tipoVenda === 'aprazo' && (
             <div className="bg-[#0b111b] border border-white/[0.07] rounded-xl">
               <button type="button" onClick={() => setReforcosAberto((v) => !v)} aria-expanded={reforcosAberto} className="w-full flex items-center justify-between gap-2 px-3 py-2.5 text-left">
                 <span className="text-sm text-gray-200">Reforços</span>
@@ -744,6 +781,7 @@ export default function Simulador() {
                 </div>
               )}
             </div>
+            )}
 
             {/* Simular */}
             <button
