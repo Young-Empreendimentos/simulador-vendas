@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { supabase } from './lib/supabase'
+import { comercialDb } from './lib/supabase'
 import { EMPREENDIMENTOS } from './empreendimentos'
 
 type Papel = 'admin' | 'coordenador' | 'consultor'
@@ -79,7 +79,7 @@ function LinhaUsuario({ u, onChanged }: { u: Usuario; onChanged: () => void }) {
       updated_at: new Date().toISOString(),
       ...extra,
     }
-    const { error } = await supabase.from('simulador_usuarios').update(patch).eq('id', u.id)
+    const { error } = await comercialDb.from('simulador_usuarios').update(patch).eq('id', u.id)
     setSalvando(false)
     if (error) { setMsg('Erro ao salvar: ' + error.message); return }
     onChanged()
@@ -171,7 +171,7 @@ export default function AdminUsuarios({ onPendentes }: { onPendentes?: (n: numbe
   const [erro, setErro] = useState<string | null>(null)
 
   async function carregar() {
-    const { data, error } = await supabase
+    const { data, error } = await comercialDb
       .from('simulador_usuarios')
       .select('id,email,nome,papel,pode_autonomia,pode_bonificar,ativo,status,empreendimentos,created_at')
       .order('created_at', { ascending: true })

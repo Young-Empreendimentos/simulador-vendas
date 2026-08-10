@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import type { Session, User } from '@supabase/supabase-js'
-import { supabase } from './lib/supabase'
+import { supabase, comercialDb } from './lib/supabase'
 
 export type Perfil = {
   id: number
@@ -51,7 +51,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Filtra pela própria linha. (Admin enxerga todas as linhas via RLS, então
       // sem este filtro o maybeSingle receberia várias e falharia.)
       const email = (sess.user.email ?? '').toLowerCase()
-      const { data, error } = await supabase
+      const { data, error } = await comercialDb
         .from('simulador_usuarios')
         .select('id,email,nome,papel,pode_autonomia,pode_bonificar,ativo,empreendimentos,status')
         .eq('email', email)

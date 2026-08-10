@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useState } from 'react'
 import { useAuth, PODE_GERENCIAR } from './auth'
-import { supabase } from './lib/supabase'
+import { comercialDb } from './lib/supabase'
 import Simulador from './Simulador'
 import AdminUsuarios from './AdminUsuarios'
 
@@ -68,7 +68,7 @@ function AppShell() {
   useEffect(() => {
     if (!gerente) return
     let ativo = true
-    supabase.from('simulador_usuarios').select('id').eq('status', 'pendente').then(({ data }) => {
+    comercialDb.from('simulador_usuarios').select('id').eq('status', 'pendente').then(({ data }) => {
       if (ativo) setPendentes(data?.length ?? 0)
     })
     return () => { ativo = false }

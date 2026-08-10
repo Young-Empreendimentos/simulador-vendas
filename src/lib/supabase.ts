@@ -13,3 +13,9 @@ if (!url || !anonKey) {
 export const supabase = createClient(url, anonKey, {
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
 })
+
+// As tabelas do sistema (simulador_usuarios / simulador_notificacoes e todo o cadastro
+// comercial) vivem no schema `comercial`, exposto na API. Use ESTE cliente para elas.
+// Login (supabase.auth) e RPCs (supabase.rpc) continuam no schema `public` — não passe
+// por aqui, senão o PostgREST procura a função no schema errado.
+export const comercialDb = supabase.schema('comercial')
