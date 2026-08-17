@@ -20,6 +20,7 @@ const normEmp = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowe
 function limiteReforco(emp: string) {
   const e = normEmp(emp)
   if (e.includes('aurora')) return 240
+  if (e.includes('erico verissimo')) return 240
   if (e.includes('morada da coxilha')) return 360
   return 180
 }
