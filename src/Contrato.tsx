@@ -232,17 +232,41 @@ type Resposta = {
   _calc?: Record<string, string>
 }
 
+// ── Rascunho: NUNCA perder o que foi digitado se a pessoa fechar/sair da página ──
+// Persistido em localStorage POR LOTE (sobrevive a fechar o modal, recarregar a página
+// e sair do navegador pra buscar informação). Limpo só quando o contrato é gerado.
+type Rascunho = {
+  c1: Pessoa; temC2: boolean; c2: Pessoa
+  dataEntrada: string; dataPrimParcela: string; parcelaManual: boolean
+  temCorretor: boolean; corretorBusca: string
+}
+const rascunhoKey = (emp: string, lote: string) => `contrato_rascunho_${emp}__${lote}`
+function lerRascunho(key: string): Partial<Rascunho> | null {
+  try { const s = localStorage.getItem(key); return s ? (JSON.parse(s) as Partial<Rascunho>) : null } catch { return null }
+}
+function salvarRascunho(key: string, r: Rascunho) {
+  try { localStorage.setItem(key, JSON.stringify(r)) } catch { /* localStorage indisponível/cheio */ }
+}
+function limparRascunho(key: string) {
+  try { localStorage.removeItem(key) } catch { /* */ }
+}
+
 export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClose: () => void }) {
   // O tipo é definido na SIMULAÇÃO (à vista sai da simulação à vista). Aqui é só reflexo.
   const tipo: 'aprazo' | 'avista' = sim.avista ? 'avista' : 'aprazo'
-  const [c1, setC1] = useState<Pessoa>(pessoaVazia)
-  const [temC2, setTemC2] = useState(false)
-  const [c2, setC2] = useState<Pessoa>(pessoaVazia)
-  const [dataEntrada, setDataEntrada] = useState(hojeISO())
-  const [dataPrimParcela, setDataPrimParcela] = useState(() => vencimentoISO(hojeISO(), 10)) // data da 1ª parcela (à prazo) — editável
-  const [parcelaManual, setParcelaManual] = useState(false) // usuário editou a data da 1ª parcela?
-  const [temCorretor, setTemCorretor] = useState(false)
-  const [corretorBusca, setCorretorBusca] = useState('')
+
+  // Rascunho salvo deste lote — carregado UMA vez ao abrir (não perde o que foi digitado).
+  const draftKey = rascunhoKey(sim.empreendimento, sim.num_lote)
+  const [rasc] = useState<Partial<Rascunho> | null>(() => lerRascunho(draftKey))
+
+  const [c1, setC1] = useState<Pessoa>(() => ({ ...pessoaVazia(), ...(rasc?.c1 ?? {}) }))
+  const [temC2, setTemC2] = useState(() => rasc?.temC2 ?? false)
+  const [c2, setC2] = useState<Pessoa>(() => ({ ...pessoaVazia(), ...(rasc?.c2 ?? {}) }))
+  const [dataEntrada, setDataEntrada] = useState(() => rasc?.dataEntrada ?? hojeISO())
+  const [dataPrimParcela, setDataPrimParcela] = useState(() => rasc?.dataPrimParcela ?? vencimentoISO(hojeISO(), 10)) // data da 1ª parcela (à prazo) — editável
+  const [parcelaManual, setParcelaManual] = useState(() => rasc?.parcelaManual ?? false) // usuário editou a data da 1ª parcela?
+  const [temCorretor, setTemCorretor] = useState(() => rasc?.temCorretor ?? false)
+  const [corretorBusca, setCorretorBusca] = useState(() => rasc?.corretorBusca ?? '')
 
   const [carregando, setCarregando] = useState(false)
   const [gerando, setGerando] = useState(false)
@@ -256,6 +280,12 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
   useEffect(() => {
     if (!parcelaManual && dataEntrada) setDataPrimParcela(vencimentoISO(dataEntrada, 10))
   }, [dataEntrada, parcelaManual])
+
+  // Salva o rascunho a cada mudança — pra NUNCA perder o que já foi escrito se a pessoa
+  // fechar o modal, recarregar ou sair da página pra buscar alguma informação.
+  useEffect(() => {
+    salvarRascunho(draftKey, { c1, temC2, c2, dataEntrada, dataPrimParcela, parcelaManual, temCorretor, corretorBusca })
+  }, [draftKey, c1, temC2, c2, dataEntrada, dataPrimParcela, parcelaManual, temCorretor, corretorBusca])
 
   function montarBody(gerar: boolean): Record<string, unknown> {
     const body: Record<string, unknown> = {
@@ -335,7 +365,7 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
     setGerando(true)
     try {
       const data = await chamar(true)
-      if (data?.link) setLinkDoc(data.link as string)
+      if (data?.link) { setLinkDoc(data.link as string); limparRascunho(draftKey) }
       else setErro('Documento gerado, mas sem link de retorno.')
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Falha ao gerar o documento.')
@@ -351,13 +381,14 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
   const r = sim.resumo
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 overflow-y-auto p-4 sm:p-8" onClick={onClose}>
-      <div className="mx-auto max-w-2xl bg-[#141414] border border-[#262626] rounded-2xl p-6 space-y-5" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 bg-black/70 overflow-y-auto p-4 sm:p-8">
+      <div className="mx-auto max-w-2xl bg-[#141414] border border-[#262626] rounded-2xl p-6 space-y-5">
         {/* Cabeçalho */}
         <div className="flex items-start justify-between">
           <div>
             <h2 className="font-display text-white text-lg">Gerar contrato</h2>
             <p className="text-sm text-gray-400">{sim.empreendimento} · Lote {sim.num_lote}</p>
+            <p className="text-[11px] text-[#26e0a3] mt-1">✓ Rascunho salvo automaticamente — pode sair e voltar sem perder o que digitou.</p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-white text-xl leading-none">✕</button>
         </div>
