@@ -227,9 +227,18 @@ type Resposta = {
   dados_lote?: { matricula: string; area: string; onus: string }
   dados_banco_empresa?: string
   corretor_nome?: string | null
+  dados_banco_corretor?: string
+  corretor_faltando?: string[]   // campos do corretor que faltam no cadastro (pedir pra preencher)
   proprietario?: string
   tem_corretor?: boolean
   _calc?: Record<string, string>
+}
+
+// Rótulos dos campos do corretor que podem faltar (pra pedir na hora do contrato).
+const LABEL_CORRETOR: Record<string, string> = {
+  nome: 'Nome', cpf: 'CPF / CNPJ', creci: 'CRECI',
+  endereco: 'Endereço', bairro: 'Bairro', cidade: 'Cidade', uf: 'UF', cep: 'CEP',
+  telefone: 'Telefone', email: 'E-mail', dados_bancarios: 'PIX / dados bancários',
 }
 
 // ── Rascunho: NUNCA perder o que foi digitado se a pessoa fechar/sair da página ──
@@ -239,6 +248,7 @@ type Rascunho = {
   c1: Pessoa; temC2: boolean; c2: Pessoa
   dataEntrada: string; dataPrimParcela: string; parcelaManual: boolean
   temCorretor: boolean; corretorBusca: string
+  corretorOverride?: Record<string, string>
 }
 const rascunhoKey = (emp: string, lote: string) => `contrato_rascunho_${emp}__${lote}`
 function lerRascunho(key: string): Partial<Rascunho> | null {
@@ -267,6 +277,8 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
   const [parcelaManual, setParcelaManual] = useState(() => rasc?.parcelaManual ?? false) // usuário editou a data da 1ª parcela?
   const [temCorretor, setTemCorretor] = useState(() => rasc?.temCorretor ?? false)
   const [corretorBusca, setCorretorBusca] = useState(() => rasc?.corretorBusca ?? '')
+  // Campos do corretor preenchidos na hora quando faltam no cadastro (usado só neste contrato).
+  const [corretorOverride, setCorretorOverride] = useState<Record<string, string>>(() => rasc?.corretorOverride ?? {})
 
   const [carregando, setCarregando] = useState(false)
   const [gerando, setGerando] = useState(false)
@@ -284,8 +296,8 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
   // Salva o rascunho a cada mudança — pra NUNCA perder o que já foi escrito se a pessoa
   // fechar o modal, recarregar ou sair da página pra buscar alguma informação.
   useEffect(() => {
-    salvarRascunho(draftKey, { c1, temC2, c2, dataEntrada, dataPrimParcela, parcelaManual, temCorretor, corretorBusca })
-  }, [draftKey, c1, temC2, c2, dataEntrada, dataPrimParcela, parcelaManual, temCorretor, corretorBusca])
+    salvarRascunho(draftKey, { c1, temC2, c2, dataEntrada, dataPrimParcela, parcelaManual, temCorretor, corretorBusca, corretorOverride })
+  }, [draftKey, c1, temC2, c2, dataEntrada, dataPrimParcela, parcelaManual, temCorretor, corretorBusca, corretorOverride])
 
   function montarBody(gerar: boolean): Record<string, unknown> {
     const body: Record<string, unknown> = {
@@ -309,6 +321,11 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
       gerar,
     }
     if (temCorretor) body.corretor_busca = corretorBusca.trim()
+    // Campos do corretor preenchidos na hora (quando faltavam no cadastro) — só os não-vazios.
+    if (temCorretor) {
+      const ov = Object.fromEntries(Object.entries(corretorOverride).filter(([, v]) => (v ?? '').trim()))
+      if (Object.keys(ov).length) body.corretor_override = ov
+    }
     // Bônus herdado da simulação (não é redigitado aqui). Só entra no contrato com corretor.
     if (temCorretor) body.bonus_comissao = Number(sim.bonus) || 0
     return body
@@ -362,6 +379,9 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
     setErro(null); setLinkDoc(null); setTentou(true)
     const v = validar()
     if (v) return setErro(v)
+    // Não gera se faltar algum dado do corretor que o cadastro não tem e não foi preenchido.
+    const faltam = (res?.corretor_faltando ?? []).filter((k) => !(corretorOverride[k] ?? '').trim())
+    if (faltam.length) return setErro('Preencha os dados do corretor que faltam: ' + faltam.map((k) => LABEL_CORRETOR[k] ?? k).join(', ') + '.')
     setGerando(true)
     try {
       const data = await chamar(true)
@@ -503,6 +523,19 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
               </div>
               {res.dados_banco_empresa && (
                 <p className="text-[11px] text-gray-500 mt-2">Dados bancários: <span className="text-gray-300">{res.dados_banco_empresa}</span></p>
+              )}
+              {res.tem_corretor && (res.corretor_faltando?.length ?? 0) > 0 && (
+                <div className="mt-3 rounded-lg border border-yellow-500/50 bg-yellow-500/10 p-3 space-y-2">
+                  <p className="text-[11px] text-yellow-300">⚠️ Faltam dados do corretor no cadastro. Preencha para gerar <span className="text-yellow-200/70">(usado só neste contrato)</span>:</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {res.corretor_faltando!.map((k) => (
+                      <div key={k}>
+                        <label className={label}>{LABEL_CORRETOR[k] ?? k}</label>
+                        <input className={campo} value={corretorOverride[k] ?? ''} onChange={(e) => setCorretorOverride((o) => ({ ...o, [k]: e.target.value }))} placeholder={k === 'dados_bancarios' ? 'PIX: 000.000.000-00' : ''} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
 
