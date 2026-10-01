@@ -439,8 +439,9 @@ export default function Simulador() {
   const [confirmacao, setConfirmacao] = useState<{ status_lote: string; mensagem: string } | null>(null)
   const [contratoSim, setContratoSim] = useState<Resultado | null>(null)
 
-  const ehMontecarlo = empreendimento.toLowerCase() === 'montecarlo'
-  const podeAutonomia = !!perfil?.pode_autonomia && ehMontecarlo
+  // Autonomia (preço customizado) liberada em TODOS os empreendimentos p/ quem tem pode_autonomia.
+  // Regra no servidor: aumentar sempre pode; desconto só onde há preço mínimo (ex.: Montecarlo).
+  const podeAutonomia = !!perfil?.pode_autonomia
 
   // Empreendimentos liberados pro usuário (vazio no perfil = todos).
   const empPermitidos = useMemo(() => {
