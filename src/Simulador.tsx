@@ -21,6 +21,7 @@ function limiteReforco(emp: string) {
   const e = normEmp(emp)
   if (e.includes('aurora')) return 240
   if (e.includes('morada da coxilha')) return 360
+  if (e.includes('ilha')) return 240
   return 180
 }
 // ── datas ──
