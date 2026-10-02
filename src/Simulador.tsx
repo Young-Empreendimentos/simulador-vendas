@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { supabase } from './lib/supabase'
+import { supabase, comercialDb } from './lib/supabase'
 import { useAuth } from './auth'
 import Contrato from './Contrato'
 import { EMPREENDIMENTOS } from './empreendimentos'
@@ -16,14 +16,8 @@ const parseBRL = (s: string) => {
   return Number.isFinite(n) ? n : 0
 }
 const normEmp = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
-// espelha o limite do backend (default 180)
-function limiteReforco(emp: string) {
-  const e = normEmp(emp)
-  if (e.includes('aurora')) return 240
-  if (e.includes('morada da coxilha')) return 360
-  if (e.includes('ilha')) return 240
-  return 180
-}
+// O limite de parcelas por empreendimento vem do banco
+// (comercial_empreendimentos.limite_parcelas); default 180. Ver limitesEmp no componente.
 // ── datas ──
 const isoParaBR = (iso: string) => {
   if (!iso) return ''
@@ -440,6 +434,17 @@ export default function Simulador() {
   const [confirmacao, setConfirmacao] = useState<{ status_lote: string; mensagem: string } | null>(null)
   const [contratoSim, setContratoSim] = useState<Resultado | null>(null)
 
+  // Limite de parcelas por empreendimento, vindo do banco (comercial_empreendimentos.limite_parcelas).
+  // Front usa só para o cap do campo de reforço; o servidor valida o limite de verdade.
+  const [limitesEmp, setLimitesEmp] = useState<Record<string, number>>({})
+  useEffect(() => {
+    comercialDb.from('comercial_empreendimentos').select('nome,limite_parcelas').then(({ data }) => {
+      const m: Record<string, number> = {}
+      for (const r of data ?? []) if (r?.nome && r.limite_parcelas) m[normEmp(r.nome)] = Number(r.limite_parcelas)
+      setLimitesEmp(m)
+    })
+  }, [])
+
   // Autonomia (preço customizado) liberada em TODOS os empreendimentos p/ quem tem pode_autonomia.
   // Regra no servidor: aumentar sempre pode; desconto só onde há preço mínimo (ex.: Montecarlo).
   const podeAutonomia = !!perfil?.pode_autonomia
@@ -457,7 +462,7 @@ export default function Simulador() {
 
   // Reforços: a lista editável é a fonte única (resumo + payload).
   const prazoN = Number(prazo) || 0
-  const LIMITE = limiteReforco(empreendimento)
+  const LIMITE = limitesEmp[normEmp(empreendimento)] ?? 180
   const teto = prazoN ? Math.min(prazoN + 6, LIMITE) : LIMITE // limite p/ QUALQUER reforço (até 6 meses após o fim)
   const fimContrato = Math.min(prazoN, teto)                  // auto-geração para na última parcela (0 se sem prazo)
   const gFreqMeses = gFreq === 'custom' ? (Number(gFreqN) || 0) : Number(gFreq)
