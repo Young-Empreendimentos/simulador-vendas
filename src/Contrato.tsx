@@ -42,18 +42,34 @@ function vencimentoISO(entradaISO: string, dia: number): string {
 }
 
 // Qualificação campo a campo (como o bot pedia); o texto do contrato é montado a partir daqui.
+// Cônjuge do comprador casado — qualificado no contrato (anuente) e, se marcado, também assina.
+// Os modelos da Young trazem: nome, CPF, RG e endereço do cônjuge (nacionalidade/profissão opcionais).
+type Conjuge = {
+  nome: string; nacionalidade: string; profissao: string; cpf: string;
+  docTipo: string; docNumero: string; docOrgao: string; docExpedicao: string;
+  mesmoEndereco: boolean; endereco: string; bairro: string; cidade: string; uf: string; cep: string;
+}
+const conjugeVazio = (): Conjuge => ({
+  nome: '', nacionalidade: '', profissao: '', cpf: '',
+  docTipo: 'RG', docNumero: '', docOrgao: '', docExpedicao: '',
+  mesmoEndereco: true, endereco: '', bairro: '', cidade: '', uf: '', cep: '',
+})
 type Pessoa = {
   nome: string; nacionalidade: string; nascimento: string; estadoCivil: string; uniaoEstavel: boolean;
   profissao: string; cpf: string;
   docTipo: string; docNumero: string; docOrgao: string; docExpedicao: string;
   email: string; telefone: string;
   endereco: string; bairro: string; cidade: string; uf: string; cep: string;
+  // Casamento (só quando estadoCivil = casado): data do casamento + cônjuge.
+  dataCasamento: string; conjugeAssina: boolean; conjuge: Conjuge;
 }
 const pessoaVazia = (): Pessoa => ({
   nome: '', nacionalidade: '', nascimento: '', estadoCivil: 'solteiro(a)', uniaoEstavel: false,
   profissao: '', cpf: '', docTipo: 'RG', docNumero: '', docOrgao: '', docExpedicao: '',
   email: '', telefone: '', endereco: '', bairro: '', cidade: '', uf: '', cep: '',
+  dataCasamento: '', conjugeAssina: false, conjuge: conjugeVazio(),
 })
+const ehCasado = (ec: string) => semAcento(ec).startsWith('casado')
 const ESTADOS_CIVIS = [
   'solteiro(a)',
   'casado(a) em regime de comunhão parcial de bens',
@@ -143,17 +159,57 @@ function problemasPessoa(p: Pessoa, rot: string): string[] {
   if (p.nascimento.trim() && !dataBRValida(p.nascimento)) e.push(`${rot}: nascimento deve ser DD/MM/AAAA.`)
   if (p.docExpedicao.trim() && !dataBRValida(p.docExpedicao)) e.push(`${rot}: data de expedição deve ser DD/MM/AAAA.`)
   if (p.cep.trim() && !cepValido(p.cep)) e.push(`${rot}: CEP deve ter 8 dígitos.`)
+  // Casado → data do casamento + qualificação do cônjuge (nome, CPF, RG e endereço), como nos modelos.
+  if (ehCasado(p.estadoCivil)) {
+    const cj = p.conjuge
+    if (!p.dataCasamento.trim()) e.push(`${rot}: informe a data do casamento.`)
+    else if (!dataBRValida(p.dataCasamento)) e.push(`${rot}: data do casamento deve ser DD/MM/AAAA.`)
+    if (!cj.nome.trim()) e.push(`${rot} (cônjuge): informe o nome.`)
+    if (!cj.cpf.trim()) e.push(`${rot} (cônjuge): informe o CPF.`)
+    else if (!cpfValido(cj.cpf)) e.push(`${rot} (cônjuge): CPF inválido (confira os dígitos).`)
+    if (!cj.docNumero.trim()) e.push(`${rot} (cônjuge): informe o número do documento (RG).`)
+    else { const dpc = docProblema(cj.docTipo, cj.docNumero); if (dpc) e.push(`${rot} (cônjuge): ${dpc}.`) }
+    if (cj.docExpedicao.trim() && !dataBRValida(cj.docExpedicao)) e.push(`${rot} (cônjuge): data de expedição deve ser DD/MM/AAAA.`)
+    if (!cj.mesmoEndereco) {
+      if (!cj.endereco.trim()) e.push(`${rot} (cônjuge): informe o endereço.`)
+      if (!cj.cidade.trim()) e.push(`${rot} (cônjuge): informe a cidade.`)
+      if (!cj.uf.trim()) e.push(`${rot} (cônjuge): informe a UF.`)
+      if (cj.cep.trim() && !cepValido(cj.cep)) e.push(`${rot} (cônjuge): CEP deve ter 8 dígitos.`)
+    }
+  }
   return e
+}
+
+// Qualificação do cônjuge (bloco que vai depois de "...casado(a) ... com ").
+// Formato dos modelos da Young: nome, [nacionalidade], [profissão], CPF, RG e endereço.
+// Endereço: usa o do próprio comprador quando "mesmoEndereco" (o casal mora junto).
+function qualificarConjuge(cj: Conjuge, dono: Pessoa): string {
+  const partes: string[] = []
+  if (cj.nome.trim()) partes.push(cj.nome.trim())
+  if (cj.nacionalidade.trim()) partes.push(cj.nacionalidade.trim())
+  if (cj.profissao.trim()) partes.push(cj.profissao.trim())
+  if (cj.cpf.trim()) partes.push(`inscrito(a) no CPF sob nº ${cj.cpf.trim()}`)
+  if (cj.docNumero.trim()) {
+    let doc = `${cj.docTipo || 'RG'} nº ${cj.docNumero.trim()}`
+    if (cj.docOrgao.trim()) doc += `, expedido(a) pelo(a) ${cj.docOrgao.trim()}${cj.docExpedicao.trim() ? ` em ${cj.docExpedicao.trim()}` : ''}`
+    partes.push(doc)
+  }
+  const fonte = cj.mesmoEndereco ? dono : cj
+  const local = [fonte.endereco, fonte.bairro, fonte.cidade && fonte.uf ? `${fonte.cidade}/${fonte.uf}` : fonte.cidade].filter(Boolean).join(', ')
+  if (local) partes.push(`residente e domiciliado(a) na ${local}`)
+  return partes.join(', ')
 }
 
 // Monta a qualificação na ordem/formato usado pela Young.
 function qualificar(p: Pessoa, temParceiro: boolean): string {
+  const casado = ehCasado(p.estadoCivil)
   const ec = p.estadoCivil === 'solteiro(a)' && p.uniaoEstavel ? 'solteiro(a), convivente em união estável' : p.estadoCivil
   const partes: string[] = []
   if (p.nome.trim()) partes.push(p.nome.trim())
   if (p.nacionalidade) partes.push(p.nacionalidade)
   if (p.nascimento) partes.push(`nascido(a) em ${p.nascimento}`)
-  if (ec) partes.push(ec)
+  // Estado civil no meio só para NÃO casados; casado vai no fim, junto com o cônjuge (como nos modelos).
+  if (!casado && ec) partes.push(ec)
   // solteiro(a) sem união estável e sem 2º comprador → declaração (logo após o estado civil)
   if (p.estadoCivil === 'solteiro(a)' && !p.uniaoEstavel && !temParceiro) {
     partes.push('declara para os devidos fins de direito que não convive em união estável com nenhuma pessoa')
@@ -170,6 +226,14 @@ function qualificar(p: Pessoa, temParceiro: boolean): string {
   const local = [p.endereco, p.bairro, p.cidade && p.uf ? `${p.cidade}/${p.uf}` : p.cidade].filter(Boolean).join(', ')
   if (local) partes.push(`residente e domiciliado(a) na ${local}`)
   if (p.cep) partes.push(`CEP ${p.cep}`)
+  // Casado: regime + data do casamento + qualificação do cônjuge, no FIM (como nos modelos da Young).
+  if (casado) {
+    let clausula = ec
+    if (p.dataCasamento.trim()) clausula += ` no dia ${p.dataCasamento.trim()}`
+    const q = qualificarConjuge(p.conjuge, p)
+    if (q) clausula += ` com ${q}`
+    partes.push(clausula)
+  }
   return partes.join(', ')
 }
 
@@ -245,6 +309,54 @@ function PessoaCampos({ p, on, tentou }: { p: Pessoa; on: (patch: Partial<Pessoa
     }
   }
 
+  // ── Cônjuge (comprador casado) ──
+  const onCj = (patch: Partial<Conjuge>) => on({ conjuge: { ...p.conjuge, ...patch } })
+  const [cjMsg, setCjMsg] = useState<string>('')
+  const [buscandoCj, setBuscandoCj] = useState(false)
+  // Busca o cônjuge no cadastro (mesma edge do comprador). Se achar endereço, usa o do cônjuge.
+  const buscarConjuge = async () => {
+    if (!cpfValido(p.conjuge.cpf)) { setCjMsg('CPF inválido — confira os dígitos.'); return }
+    setBuscandoCj(true); setCjMsg('buscando no cadastro…')
+    try {
+      const { data, error } = await supabase.functions.invoke('cliente-por-cpf', { body: { cpf: soNum(p.conjuge.cpf) } })
+      if (error) {
+        let m = 'Falha na busca.'
+        try { const b = await error.context.json(); m = b.mensagem || b.erro || m } catch { /* */ }
+        setCjMsg(m); return
+      }
+      if (!data?.encontrado) { setCjMsg('Não encontrado no cadastro — preencha manualmente.'); return }
+      const patch: Partial<Conjuge> = {
+        cpf: data.cpf || p.conjuge.cpf,
+        nome: data.nome || p.conjuge.nome,
+        nacionalidade: data.nacionalidade || p.conjuge.nacionalidade,
+        profissao: data.profissao || p.conjuge.profissao,
+      }
+      if (data.rg) { patch.docTipo = 'RG'; patch.docNumero = data.rg }
+      if (data.rg_orgao) patch.docOrgao = data.rg_orgao
+      if (data.rg_expedicao) patch.docExpedicao = data.rg_expedicao
+      // Se o cadastro tem endereço do cônjuge, usa o dele (desmarca "mesmo endereço").
+      if (data.endereco) {
+        patch.mesmoEndereco = false
+        patch.endereco = data.endereco
+        patch.bairro = data.bairro || p.conjuge.bairro
+        patch.cidade = data.cidade || p.conjuge.cidade
+        patch.uf = data.uf || p.conjuge.uf
+        patch.cep = data.cep || p.conjuge.cep
+      }
+      onCj(patch)
+      const falta: string[] = []
+      if (!data.rg) falta.push('documento (RG)')
+      let msg = '✓ Cônjuge preenchido do cadastro.'
+      if (data.pj) msg += ' ⚠️ CNPJ/pessoa jurídica.'
+      if (falta.length) msg += ' Falta completar: ' + falta.join(', ') + '.'
+      setCjMsg(msg)
+    } catch (e) {
+      setCjMsg('Erro: ' + (e instanceof Error ? e.message : String(e)))
+    } finally {
+      setBuscandoCj(false)
+    }
+  }
+
   return (
     <div className="space-y-3">
       <div><label className={label}>Nome completo</label><input className={mark(req(p.nome))} value={p.nome} onChange={(e) => on({ nome: e.target.value })} /></div>
@@ -264,6 +376,63 @@ function PessoaCampos({ p, on, tentou }: { p: Pessoa; on: (patch: Partial<Pessoa
           <input type="checkbox" checked={p.uniaoEstavel} onChange={(e) => on({ uniaoEstavel: e.target.checked })} />
           Convive em união estável
         </label>
+      )}
+      {ehCasado(p.estadoCivil) && (
+        <div className="rounded-lg border border-[#004ebf]/30 bg-[#004ebf]/5 p-3 space-y-3">
+          <p className="text-[11px] font-medium text-[#8ab4ff]">Cônjuge — obrigatório no contrato (regime: {p.estadoCivil.replace('casado(a) em regime de ', '')})</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <div><label className={label}>Data do casamento</label><input className={mark(req(p.dataCasamento) || (!!p.dataCasamento.trim() && !dataBRValida(p.dataCasamento)))} value={p.dataCasamento} onChange={(e) => on({ dataCasamento: e.target.value })} placeholder="10/04/2026" /></div>
+            <div className="col-span-2 flex items-end">
+              <label className="flex items-center gap-2 text-xs text-gray-300">
+                <input type="checkbox" checked={p.conjugeAssina} onChange={(e) => on({ conjugeAssina: e.target.checked })} />
+                Cônjuge também assina como comprador(a)
+              </label>
+            </div>
+          </div>
+          <div>
+            <label className={label}>CPF do cônjuge</label>
+            <div className="flex gap-2">
+              <input className={mark(req(p.conjuge.cpf) || (!!p.conjuge.cpf.trim() && !cpfValido(p.conjuge.cpf)))} value={p.conjuge.cpf} onChange={(e) => onCj({ cpf: e.target.value })} placeholder="000.000.000-00" />
+              <button type="button" onClick={buscarConjuge} disabled={buscandoCj} className="shrink-0 bg-[#0f1520] border border-[#333] text-gray-200 px-3 rounded-lg text-xs font-medium hover:border-[#fe5009] disabled:opacity-50 whitespace-nowrap">
+                {buscandoCj ? '…' : '🔍 buscar cadastro'}
+              </button>
+            </div>
+            {cjMsg && <p className="text-[11px] text-gray-400 mt-1">{cjMsg}</p>}
+          </div>
+          <div><label className={label}>Nome do cônjuge</label><input className={mark(req(p.conjuge.nome))} value={p.conjuge.nome} onChange={(e) => onCj({ nome: e.target.value })} /></div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div><label className={label}>Nacionalidade</label><input className={campo} value={p.conjuge.nacionalidade} onChange={(e) => onCj({ nacionalidade: e.target.value })} placeholder="brasileira" /></div>
+            <div><label className={label}>Profissão</label><input className={campo} value={p.conjuge.profissao} onChange={(e) => onCj({ profissao: e.target.value })} /></div>
+            <div>
+              <label className={label}>Documento</label>
+              <select className={campo} value={p.conjuge.docTipo} onChange={(e) => onCj({ docTipo: e.target.value })}>
+                {['RG', 'CNH', 'CTPS', 'Passaporte'].map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div><label className={label}>Nº do documento</label><input className={mark(req(p.conjuge.docNumero) || (!!p.conjuge.docNumero.trim() && !!docProblema(p.conjuge.docTipo, p.conjuge.docNumero)))} value={p.conjuge.docNumero} onChange={(e) => onCj({ docNumero: e.target.value })} /></div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className={label}>Órgão expedidor <span className="text-gray-600">(opcional)</span></label><input className={campo} value={p.conjuge.docOrgao} onChange={(e) => onCj({ docOrgao: e.target.value })} placeholder="SSP/RS" /></div>
+            <div><label className={label}>Data de expedição <span className="text-gray-600">(opcional)</span></label><input className={mark(!!p.conjuge.docExpedicao.trim() && !dataBRValida(p.conjuge.docExpedicao))} value={p.conjuge.docExpedicao} onChange={(e) => onCj({ docExpedicao: e.target.value })} placeholder="07/11/2022" /></div>
+          </div>
+          <label className="flex items-center gap-2 text-xs text-gray-300">
+            <input type="checkbox" checked={p.conjuge.mesmoEndereco} onChange={(e) => onCj({ mesmoEndereco: e.target.checked })} />
+            Mora no mesmo endereço do comprador
+          </label>
+          {!p.conjuge.mesmoEndereco && (
+            <>
+              <div className="grid grid-cols-[150px_1fr_70px] gap-3">
+                <div><label className={label}>CEP</label><input className={mark(!!p.conjuge.cep.trim() && !cepValido(p.conjuge.cep))} value={p.conjuge.cep} onChange={(e) => onCj({ cep: e.target.value })} inputMode="numeric" placeholder="00000-000" /></div>
+                <div><label className={label}>Cidade</label><input className={mark(req(p.conjuge.cidade))} value={p.conjuge.cidade} onChange={(e) => onCj({ cidade: e.target.value })} /></div>
+                <div><label className={label}>UF</label><input className={mark(req(p.conjuge.uf))} value={p.conjuge.uf} onChange={(e) => onCj({ uf: e.target.value })} maxLength={2} placeholder="RS" /></div>
+              </div>
+              <div className="grid grid-cols-[1fr_150px] gap-3">
+                <div><label className={label}>Endereço (rua, nº, compl.)</label><input className={mark(req(p.conjuge.endereco))} value={p.conjuge.endereco} onChange={(e) => onCj({ endereco: e.target.value })} /></div>
+                <div><label className={label}>Bairro</label><input className={campo} value={p.conjuge.bairro} onChange={(e) => onCj({ bairro: e.target.value })} /></div>
+              </div>
+            </>
+          )}
+        </div>
       )}
       <div>
         <label className={label}>CPF</label>
@@ -401,8 +570,17 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
       data_entrada: brDate(dataEntrada),
       data_primeiro_vencimento: tipo === 'aprazo' ? brDate(dataPrimParcela) : '',
       Qualificacao_Clientes: temC2 ? `${qualificar(c1, true)}\n${qualificar(c2, true)}` : qualificar(c1, false),
-      Comprador1: c1.nome.trim(),
-      Comprador2: temC2 ? c2.nome.trim() : '',
+      ...(() => {
+        // Partes que assinam: comprador(es) + cônjuge que também assina (anuente não entra aqui).
+        const partes: string[] = [c1.nome.trim()]
+        if (ehCasado(c1.estadoCivil) && c1.conjugeAssina && c1.conjuge.nome.trim()) partes.push(c1.conjuge.nome.trim())
+        if (temC2) {
+          partes.push(c2.nome.trim())
+          if (ehCasado(c2.estadoCivil) && c2.conjugeAssina && c2.conjuge.nome.trim()) partes.push(c2.conjuge.nome.trim())
+        }
+        const f = partes.filter(Boolean)
+        return { Comprador1: f[0] || '', Comprador2: f.slice(1).join(' e ') }
+      })(),
       tem_corretor: temCorretor,
       gerar,
     }
