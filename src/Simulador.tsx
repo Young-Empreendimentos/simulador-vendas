@@ -79,6 +79,7 @@ type Resumo = {
   entrada: number
   prazo_meses: number
   parcela_mensal: number
+  ultima_parcela: number
   total_parcelas: number
   total_reforcos: number
   itbi: number
@@ -529,6 +530,8 @@ export default function Simulador() {
     if (!confirmarFlag) setConfirmacao(null)
     if (!empreendimento) return setErro('Selecione o empreendimento.')
     if (!numLote.trim()) return setErro('Informe o número do lote.')
+    // Entrada mínima R$ 500 (à prazo) — avisa no front antes de ir ao servidor (o servidor também valida).
+    if (tipoVenda === 'aprazo' && (Number(entrada) || 0) < 500) return setErro('Entrada mínima é R$ 500,00.')
 
     const avista = tipoVenda === 'avista'
     const body: Record<string, unknown> = {
@@ -570,7 +573,10 @@ export default function Simulador() {
       }
       if (data?.erro) {
         setErro(data.mensagem || data.erro)
-        setErroPromo(data.erro === 'PROMO_EXPIRADA' || data.erro === 'PROMO_NAO_ATIVA')
+        // Qualquer erro de promoção (expirada, futura, sem data, sem preço, prazo da promo)
+        // oferece o atalho "Simular sem promoção".
+        const cod = typeof data.erro === 'string' ? data.erro : ''
+        setErroPromo(cod.startsWith('PROMO') || cod === 'PRAZO_PROMO')
         return
       }
       setConfirmacao(null)

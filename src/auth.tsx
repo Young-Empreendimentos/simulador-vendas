@@ -52,7 +52,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setStatus('unauthenticated')
         return
       }
-      carregadoRef.current = sess.user.id
       // Filtra pela própria linha. (Admin enxerga todas as linhas via RLS, então
       // sem este filtro o maybeSingle receberia várias e falharia.)
       const email = (sess.user.email ?? '').toLowerCase()
@@ -63,11 +62,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .maybeSingle()
       if (!ativo) return
       if (error) {
+        // Erro transitório (rede/RLS): NÃO marca carregadoRef, pra o próximo evento
+        // (TOKEN_REFRESHED ao focar a aba) poder tentar de novo — senão travaria em "pendente".
         console.error('Erro ao ler perfil:', error.message)
         setPerfil(null)
         setStatus('pending')
         return
       }
+      // Resolveu de verdade (com ou sem acesso) → marca pra não recarregar no foco de aba.
+      carregadoRef.current = sess.user.id
       if (data && data.ativo) {
         setPerfil({ ...data, empreendimentos: data.empreendimentos ?? [] } as Perfil)
         setStatus('authorized')

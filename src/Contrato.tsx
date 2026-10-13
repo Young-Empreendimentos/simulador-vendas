@@ -15,6 +15,8 @@ export type SimParaContrato = {
     itbi: number
     cartorio: number
     total_parcelas: number
+    total_pago?: number       // vem da simulação (backend) — evita recalcular no front
+    ultima_parcela?: number   // idem; calculada igual ao gerar-contrato
   }
   reforcos: { mes: number; valor: string; data_str: string }[]
 }
@@ -663,6 +665,10 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
   const secao = 'font-display text-white text-xs uppercase tracking-wide text-gray-400'
   const req = <span className="text-[#fe5009]">*</span>
   const r = sim.resumo
+  // Valores herdados da simulação (backend) — com fallback defensivo p/ simulações antigas.
+  // A última parcela usa a MESMA fórmula do gerar-contrato, então prévia e contrato batem.
+  const ultimaParcela = r.ultima_parcela ?? (r.prazo_meses > 1 ? Math.round((r.total_parcelas - r.parcela_mensal * (r.prazo_meses - 1)) * 100) / 100 : r.parcela_mensal)
+  const totalAvista = r.total_pago ?? (r.valor_lote_av + r.itbi + r.cartorio)
 
   return (
     <div className="fixed inset-0 z-50 bg-black/70 overflow-y-auto p-4 sm:p-8">
@@ -685,12 +691,12 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
             {tipo === 'avista' ? (
               <>
                 <div><p className="text-gray-500 text-[11px]">ITBI + Cartório</p><p className="text-white">{brl(r.itbi + r.cartorio)}</p></div>
-                <div className="sm:col-span-2"><p className="text-gray-500 text-[11px]">Total à vista</p><p className="text-white">{brl(r.valor_lote_av + r.itbi + r.cartorio)}</p></div>
+                <div className="sm:col-span-2"><p className="text-gray-500 text-[11px]">Total à vista</p><p className="text-white">{brl(totalAvista)}</p></div>
               </>
             ) : (
               <>
                 <div><p className="text-gray-500 text-[11px]">Entrada</p><p className="text-white">{brl(r.entrada)}</p></div>
-                <div><p className="text-gray-500 text-[11px]">Parcelas</p><p className="text-white">{r.prazo_meses}x {brl(r.parcela_mensal)}{r.prazo_meses > 1 && Math.abs((r.total_parcelas - r.parcela_mensal * (r.prazo_meses - 1)) - r.parcela_mensal) >= 0.005 ? <span className="text-gray-500 text-[11px]"> · última {brl(Math.round((r.total_parcelas - r.parcela_mensal * (r.prazo_meses - 1)) * 100) / 100)}</span> : null}</p></div>
+                <div><p className="text-gray-500 text-[11px]">Parcelas</p><p className="text-white">{r.prazo_meses}x {brl(r.parcela_mensal)}{r.prazo_meses > 1 && Math.abs(ultimaParcela - r.parcela_mensal) >= 0.005 ? <span className="text-gray-500 text-[11px]"> · última {brl(ultimaParcela)}</span> : null}</p></div>
                 <div><p className="text-gray-500 text-[11px]">ITBI + Cartório</p><p className="text-white">{brl(r.itbi + r.cartorio)}</p></div>
               </>
             )}
