@@ -64,6 +64,25 @@ const ESTADOS_CIVIS = [
   'viúvo(a)',
 ]
 
+// Mapeia o estado civil do Sienge (SOLTEIRO/CASADO/...) + regime para a opção do contrato.
+// Retorna '' quando não reconhece (mantém o que já está). Para CASADO sem regime informado,
+// assume comunhão parcial (padrão legal quando não há pacto) — o corretor deve CONFERIR.
+const semAcento = (s: string) => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
+function mapEstadoCivil(civil: string, regime: string): string {
+  const c = semAcento(civil)
+  if (c.startsWith('solteiro')) return 'solteiro(a)'
+  if (c.startsWith('divorciado')) return 'divorciado(a)'
+  if (c.startsWith('viuvo')) return 'viúvo(a)'
+  if (c.startsWith('casado') || c.startsWith('uniao')) {
+    const r = semAcento(regime)
+    if (r.includes('universal')) return 'casado(a) em regime de comunhão universal de bens'
+    if (r.includes('separac')) return 'casado(a) em regime de separação total de bens'
+    if (r.includes('aquesto') || r.includes('participac')) return 'casado(a) em regime de participação final nos aquestos'
+    return 'casado(a) em regime de comunhão parcial de bens'
+  }
+  return ''
+}
+
 // ── Validação dos dados que entram no contrato ──
 const soNum = (s: string) => (s || '').replace(/\D/g, '')
 function cpfValido(s: string): boolean {
@@ -169,6 +188,63 @@ function PessoaCampos({ p, on, tentou }: { p: Pessoa; on: (patch: Partial<Pessoa
     if (r) { on({ cidade: r.cidade, uf: r.uf, ...(r.bairro ? { bairro: r.bairro } : {}) }); setCepMsg('') }
     else setCepMsg('erro')
   }
+
+  // Autopreenche a qualificação do comprador a partir do cadastro do Sienge (por CPF).
+  // É só pré-preenchimento: preenche o que existe no cadastro e deixa o resto pro corretor;
+  // a validação obrigatória do contrato continua valendo (o corretor confere tudo).
+  const [cpfMsg, setCpfMsg] = useState<string>('')
+  const [buscandoCpf, setBuscandoCpf] = useState(false)
+  const buscarCliente = async () => {
+    if (!cpfValido(p.cpf)) { setCpfMsg('CPF inválido — confira os dígitos.'); return }
+    setBuscandoCpf(true); setCpfMsg('buscando no cadastro…')
+    try {
+      const { data, error } = await supabase.functions.invoke('cliente-por-cpf', { body: { cpf: soNum(p.cpf) } })
+      if (error) {
+        let m = 'Falha na busca.'
+        try { const b = await error.context.json(); m = b.mensagem || b.erro || m } catch { /* */ }
+        setCpfMsg(m); return
+      }
+      if (!data?.encontrado) { setCpfMsg('Não encontrado no cadastro — preencha manualmente.'); return }
+      const patch: Partial<Pessoa> = {
+        cpf: data.cpf || p.cpf,
+        nome: data.nome || p.nome,
+        nacionalidade: data.nacionalidade || p.nacionalidade,
+        nascimento: data.nascimento || p.nascimento,
+        profissao: data.profissao || p.profissao,
+        email: data.email || p.email,
+        telefone: data.telefone || p.telefone,
+        endereco: data.endereco || p.endereco,
+        bairro: data.bairro || p.bairro,
+        cidade: data.cidade || p.cidade,
+        uf: data.uf || p.uf,
+        cep: data.cep || p.cep,
+      }
+      if (data.rg) { patch.docTipo = 'RG'; patch.docNumero = data.rg }
+      if (data.rg_orgao) patch.docOrgao = data.rg_orgao
+      if (data.rg_expedicao) patch.docExpedicao = data.rg_expedicao
+      const ec = mapEstadoCivil(data.civil_status, data.matrimonial_regime)
+      if (ec) patch.estadoCivil = ec
+      on(patch)
+      // Mensagem: avisa o que ainda falta completar e pontos de conferência.
+      const falta: string[] = []
+      if (!data.nascimento) falta.push('nascimento')
+      if (!ec) falta.push('estado civil')
+      if (!data.profissao) falta.push('profissão')
+      if (!data.rg) falta.push('documento (RG)')
+      if (!data.rg_orgao) falta.push('órgão')
+      if (!data.rg_expedicao) falta.push('expedição')
+      let msg = '✓ Preenchido do cadastro.'
+      if (data.pj) msg += ' ⚠️ CNPJ/pessoa jurídica.'
+      if (ec.startsWith('casado') && !data.matrimonial_regime) msg += ' Confira o regime de bens.'
+      if (falta.length) msg += ' Falta completar: ' + falta.join(', ') + '.'
+      setCpfMsg(msg)
+    } catch (e) {
+      setCpfMsg('Erro: ' + (e instanceof Error ? e.message : String(e)))
+    } finally {
+      setBuscandoCpf(false)
+    }
+  }
+
   return (
     <div className="space-y-3">
       <div><label className={label}>Nome completo</label><input className={mark(req(p.nome))} value={p.nome} onChange={(e) => on({ nome: e.target.value })} /></div>
@@ -189,7 +265,17 @@ function PessoaCampos({ p, on, tentou }: { p: Pessoa; on: (patch: Partial<Pessoa
           Convive em união estável
         </label>
       )}
-      <div><label className={label}>CPF</label><input className={mark(req(p.cpf) || (!!p.cpf.trim() && !cpfValido(p.cpf)))} value={p.cpf} onChange={(e) => on({ cpf: e.target.value })} placeholder="000.000.000-00" /></div>
+      <div>
+        <label className={label}>CPF</label>
+        <div className="flex gap-2">
+          <input className={mark(req(p.cpf) || (!!p.cpf.trim() && !cpfValido(p.cpf)))} value={p.cpf} onChange={(e) => on({ cpf: e.target.value })} placeholder="000.000.000-00" />
+          <button type="button" onClick={buscarCliente} disabled={buscandoCpf} className="shrink-0 bg-[#0f1520] border border-[#333] text-gray-200 px-3 rounded-lg text-xs font-medium hover:border-[#fe5009] disabled:opacity-50 whitespace-nowrap">
+            {buscandoCpf ? '…' : '🔍 buscar cadastro'}
+          </button>
+        </div>
+        {cpfMsg && <p className="text-[11px] text-gray-400 mt-1">{cpfMsg}</p>}
+        {!cpfMsg && <p className="text-[10px] text-gray-600 mt-1">Já é cliente? Busca o cadastro pelo CPF e preenche o que houver.</p>}
+      </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div>
           <label className={label}>Documento</label>
