@@ -27,6 +27,12 @@ const brDate = (iso: string) => {
   const [a, m, d] = iso.split('-')
   return a && m && d ? `${d}/${m}/${a}` : iso
 }
+// Data do banco (YYYY-MM-DD, ou timestamp) → DD/MM/AAAA (pra autopreencher da reserva).
+const isoParaBR = (v?: string | null) => {
+  if (!v) return ''
+  const [a, m, d] = String(v).slice(0, 10).split('-')
+  return a && m && d ? `${d}/${m}/${a}` : ''
+}
 const hojeISO = () => {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -99,6 +105,38 @@ function mapEstadoCivil(civil: string, regime: string): string {
     return 'casado(a) em regime de comunhão parcial de bens'
   }
   return ''
+}
+
+// ── Autopreenchimento a partir da reserva (sistema de Reservas) ──
+// A reserva traz a qualificação do cliente (e do 2º titular). Vira pré-preenchimento do
+// comprador — o corretor confere e completa o que a reserva não tem (bairro/UF/CEP).
+const rs = (r: Record<string, unknown>, k: string) => String(r[k] ?? '').trim()
+function reservaParaPessoa(r: Record<string, unknown>): Partial<Pessoa> {
+  const ec = mapEstadoCivil(rs(r, 'estado_civil'), rs(r, 'regime_bens'))
+  const patch: Partial<Pessoa> = {
+    nome: rs(r, 'nome'), cpf: rs(r, 'cpf'), nacionalidade: rs(r, 'nacionalidade'),
+    nascimento: isoParaBR(rs(r, 'data_nascimento')), profissao: rs(r, 'profissao'),
+    email: rs(r, 'email'), telefone: rs(r, 'telefone'),
+    endereco: rs(r, 'endereco'), cidade: rs(r, 'cidade'),
+  }
+  if (ec) patch.estadoCivil = ec
+  if (rs(r, 'data_casamento')) patch.dataCasamento = isoParaBR(rs(r, 'data_casamento'))
+  if (rs(r, 'rg_cnh')) { patch.docTipo = 'RG'; patch.docNumero = rs(r, 'rg_cnh') }
+  if (rs(r, 'orgao_expedidor')) patch.docOrgao = rs(r, 'orgao_expedidor')
+  if (rs(r, 'data_expedicao')) patch.docExpedicao = isoParaBR(rs(r, 'data_expedicao'))
+  return patch
+}
+function reservaSecundarioParaPessoa(r: Record<string, unknown>): Partial<Pessoa> {
+  const patch: Partial<Pessoa> = {
+    nome: rs(r, 'nome_secundario'), cpf: rs(r, 'cpf_secundario'),
+    nacionalidade: rs(r, 'nacionalidade_secundario'), profissao: rs(r, 'profissao_secundario'),
+    nascimento: isoParaBR(rs(r, 'data_nascimento_secundario')),
+    endereco: rs(r, 'endereco_secundario'), email: rs(r, 'email_secundario'), telefone: rs(r, 'telefone_secundario'),
+  }
+  if (rs(r, 'rg_cnh_secundario')) { patch.docTipo = 'RG'; patch.docNumero = rs(r, 'rg_cnh_secundario') }
+  if (rs(r, 'orgao_expedidor_secundario')) patch.docOrgao = rs(r, 'orgao_expedidor_secundario')
+  if (rs(r, 'data_expedicao_secundario')) patch.docExpedicao = isoParaBR(rs(r, 'data_expedicao_secundario'))
+  return patch
 }
 
 // ── Validação dos dados que entram no contrato ──
@@ -543,6 +581,10 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
   const [res, setRes] = useState<Resposta | null>(null)
   const [linkDoc, setLinkDoc] = useState<string | null>(null)
   const [tentou, setTentou] = useState(false) // já tentou pré-visualizar/gerar? (marca obrigatórios vazios)
+  // Reserva do lote (sistema de Reservas): aviso de quem reservou + autopreenchimento.
+  const [reservaInfo, setReservaInfo] = useState<{ reservado: boolean; reserva: Record<string, unknown> | null; foi_voce?: boolean } | null>(null)
+  const [avisoReserva, setAvisoReserva] = useState<string | null>(null) // bloqueio ao gerar (pede confirmação)
+  const [reservaPreenchida, setReservaPreenchida] = useState(false)
 
   // Enquanto o vendedor não mexer na data da 1ª parcela, ela acompanha a entrada
   // (dia 10 do mês seguinte). Se ele escolher outra data, respeita a escolha.
@@ -556,11 +598,41 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
     salvarRascunho(draftKey, { c1, temC2, c2, dataEntrada, dataPrimParcela, parcelaManual, temCorretor, corretorBusca, corretorOverride })
   }, [draftKey, c1, temC2, c2, dataEntrada, dataPrimParcela, parcelaManual, temCorretor, corretorBusca, corretorOverride])
 
-  function montarBody(gerar: boolean): Record<string, unknown> {
+  // Ao abrir, consulta se o lote tem reserva (só responde p/ empreendimentos que usam Reservas).
+  // Serve pro aviso de quem reservou e pro botão de autopreencher — não bloqueia nada aqui.
+  useEffect(() => {
+    let cancel = false
+    ;(async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke('gerar-contrato', {
+          body: { empreendimento: sim.empreendimento, num_lote: sim.num_lote, so_reserva: true },
+        })
+        if (!cancel && !error && data && (data.reservado || data.reserva)) {
+          setReservaInfo({ reservado: !!data.reservado, reserva: data.reserva ?? null, foi_voce: !!data.foi_voce })
+        }
+      } catch { /* sem reserva/indisponível — segue normal */ }
+    })()
+    return () => { cancel = true }
+  }, [sim.empreendimento, sim.num_lote])
+
+  // Joga os dados da reserva no comprador 1 (e no 2, se a reserva tiver 2º titular).
+  function preencherDaReserva() {
+    const r = reservaInfo?.reserva
+    if (!r) return
+    setC1((v) => ({ ...v, ...reservaParaPessoa(r) }))
+    if (String(r.nome_secundario ?? '').trim()) {
+      setTemC2(true)
+      setC2((v) => ({ ...v, ...reservaSecundarioParaPessoa(r) }))
+    }
+    setReservaPreenchida(true)
+  }
+
+  function montarBody(gerar: boolean, confirmarReserva = false): Record<string, unknown> {
     const body: Record<string, unknown> = {
       tipo_contrato: tipo,
       empreendimento: sim.empreendimento,
       num_lote: sim.num_lote,
+      reserva_confirmada: confirmarReserva, // libera gerar mesmo com lote reservado (após o aviso)
       valor_lote_av: sim.resumo.valor_lote_av,
       entrada_bruta: tipo === 'avista' ? sim.resumo.valor_lote_av : sim.resumo.entrada,
       parcela_mensal: sim.resumo.parcela_mensal,
@@ -597,8 +669,8 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
     return body
   }
 
-  async function chamar(gerar: boolean) {
-    const { data, error } = await supabase.functions.invoke('gerar-contrato', { body: montarBody(gerar) })
+  async function chamar(gerar: boolean, confirmarReserva = false) {
+    const { data, error } = await supabase.functions.invoke('gerar-contrato', { body: montarBody(gerar, confirmarReserva) })
     if (error) {
       let msg = error.message
       try {
@@ -641,8 +713,8 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
     }
   }
 
-  async function gerarDocumento() {
-    setErro(null); setLinkDoc(null); setTentou(true)
+  async function gerarDocumento(confirmarReserva = false) {
+    setErro(null); setLinkDoc(null); setTentou(true); setAvisoReserva(null)
     const v = validar()
     if (v) return setErro(v)
     // Não gera se faltar algum dado do corretor que o cadastro não tem e não foi preenchido.
@@ -650,7 +722,13 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
     if (faltam.length) return setErro('Preencha os dados do corretor que faltam: ' + faltam.map((k) => LABEL_CORRETOR[k] ?? k).join(', ') + '.')
     setGerando(true)
     try {
-      const data = await chamar(true)
+      const data = await chamar(true, confirmarReserva)
+      // Lote reservado e ainda não confirmado: o servidor recusa e pede confirmação (só aviso).
+      if (data?.requer_confirmacao) {
+        setReservaInfo({ reservado: true, reserva: (data.reserva ?? null) as Record<string, unknown> | null, foi_voce: !!data.foi_voce })
+        setAvisoReserva(String(data.mensagem || 'Este lote está reservado.'))
+        return
+      }
       if (data?.link) { setLinkDoc(data.link as string); limparRascunho(draftKey) }
       else setErro('Documento gerado, mas sem link de retorno.')
     } catch (e) {
@@ -682,6 +760,28 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-white text-xl leading-none">✕</button>
         </div>
+
+        {/* Aviso de reserva — lote já reservado no sistema de Reservas (ex: Fase 2) */}
+        {reservaInfo?.reservado && reservaInfo.reserva && (
+          <div className="rounded-lg border border-yellow-500/50 bg-yellow-500/10 p-3 space-y-2">
+            <p className="text-sm text-yellow-200">
+              ⚠️ <span className="font-semibold">Lote reservado</span>{reservaInfo.foi_voce ? ' por você' : ''} no sistema de reservas.
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[12px]">
+              <div><p className="text-yellow-200/60">Cliente</p><p className="text-yellow-100">{String(reservaInfo.reserva.nome ?? '—')}</p></div>
+              <div><p className="text-yellow-200/60">CPF</p><p className="text-yellow-100">{String(reservaInfo.reserva.cpf ?? '—')}</p></div>
+              <div><p className="text-yellow-200/60">Tipo</p><p className="text-yellow-100">{String(reservaInfo.reserva.tipo ?? 'Reserva')}</p></div>
+              <div><p className="text-yellow-200/60">Reservado por</p><p className="text-yellow-100">{String(reservaInfo.reserva.responsavel_reserva ?? reservaInfo.reserva.criado_por_email ?? '—')}</p></div>
+            </div>
+            {!reservaPreenchida ? (
+              <button type="button" onClick={preencherDaReserva} className="text-xs font-medium bg-yellow-500/20 hover:bg-yellow-500/30 border border-yellow-500/50 text-yellow-100 px-3 py-1.5 rounded-lg">
+                Preencher dados do comprador com a reserva
+              </button>
+            ) : (
+              <p className="text-[11px] text-yellow-200/80">✓ Dados preenchidos da reserva — confira e complete bairro/UF/CEP{String(reservaInfo.reserva.nome_secundario ?? '').trim() ? '. A reserva tem um 2º titular: confira se é comprador ou cônjuge.' : '.'}</p>
+            )}
+          </div>
+        )}
 
         {/* Resumo da simulação (o que está sendo contratado) */}
         <div className="rounded-lg bg-[#0d0d0d] border border-[#262626] p-3">
@@ -827,8 +927,18 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
               <a href={linkDoc} target="_blank" rel="noopener noreferrer" className="block w-full text-center bg-[#00bcbc] hover:brightness-110 transition text-white font-medium py-2.5 rounded-lg">
                 ✓ Contrato gerado — abrir no Google Docs
               </a>
+            ) : avisoReserva ? (
+              <div className="rounded-lg border border-yellow-500/60 bg-yellow-500/10 p-3 space-y-2">
+                <p className="text-sm text-yellow-100 whitespace-pre-wrap">⚠️ {avisoReserva}</p>
+                <div className="flex gap-2">
+                  <button onClick={() => gerarDocumento(true)} disabled={gerando} className="flex-1 bg-[#fe5009] hover:bg-orange-600 disabled:opacity-50 transition text-white font-medium py-2.5 rounded-lg">
+                    {gerando ? 'Gerando…' : 'Confirmo, gerar assim mesmo'}
+                  </button>
+                  <button onClick={() => setAvisoReserva(null)} disabled={gerando} className="px-4 bg-[#1a1a1a] border border-[#333] text-gray-300 rounded-lg text-sm hover:text-white">Cancelar</button>
+                </div>
+              </div>
             ) : (
-              <button onClick={gerarDocumento} disabled={gerando} className="w-full bg-[#fe5009] hover:bg-orange-600 disabled:opacity-50 transition text-white font-medium py-2.5 rounded-lg">
+              <button onClick={() => gerarDocumento()} disabled={gerando} className="w-full bg-[#fe5009] hover:bg-orange-600 disabled:opacity-50 transition text-white font-medium py-2.5 rounded-lg">
                 {gerando ? 'Gerando documento…' : 'Gerar documento no Google Docs'}
               </button>
             )}
