@@ -446,6 +446,26 @@ export default function Simulador() {
     })
   }, [])
 
+  // Prazo máximo da PROMOÇÃO vigente por empreendimento (comercial_promocoes.prazo_maximo).
+  // Quando a Promoção está marcada, o teto de reforços segue o prazo da promo — que pode PASSAR
+  // do limite normal do empreendimento (ex.: Algarve "até 200x sem juros"). "Deixar pelo banco",
+  // igual ao servidor. Vigência = só pela data (precisa de data_fim), como no simular-financiamento.
+  const [promoLimites, setPromoLimites] = useState<Record<string, number>>({})
+  useEffect(() => {
+    comercialDb.from('comercial_promocoes').select('empreendimento,prazo_maximo,data_inicio,data_fim').then(({ data }) => {
+      const hoje = new Date(); hoje.setHours(0, 0, 0, 0)
+      const m: Record<string, number> = {}
+      for (const r of data ?? []) {
+        const pz = Number(r?.prazo_maximo) || 0
+        if (!pz || !r?.data_fim) continue // sem prazo da promo ou sem término não conta
+        const iniOk = !r.data_inicio || new Date(String(r.data_inicio) + 'T00:00:00') <= hoje
+        const fimOk = new Date(String(r.data_fim) + 'T00:00:00') >= hoje
+        if (iniOk && fimOk) { const k = normEmp(r.empreendimento); if (pz > (m[k] ?? 0)) m[k] = pz }
+      }
+      setPromoLimites(m)
+    })
+  }, [])
+
   // Autonomia (preço customizado) liberada em TODOS os empreendimentos p/ quem tem pode_autonomia.
   // Regra no servidor: aumentar sempre pode; desconto só onde há preço mínimo (ex.: Montecarlo).
   const podeAutonomia = !!perfil?.pode_autonomia
@@ -463,7 +483,11 @@ export default function Simulador() {
 
   // Reforços: a lista editável é a fonte única (resumo + payload).
   const prazoN = Number(prazo) || 0
-  const LIMITE = limitesEmp[normEmp(empreendimento)] ?? 180
+  // Com Promoção marcada e promo vigente com prazo_maximo, QUEM MANDA é o prazo da promo
+  // ('todos' cobre qualquer empreendimento) — pode passar do limite do empreendimento. Mesma
+  // regra do servidor (simular-financiamento). Sem promo, vale o limite do empreendimento.
+  const promoLim = promocional ? Math.max(promoLimites[normEmp(empreendimento)] ?? 0, promoLimites['todos'] ?? 0) : 0
+  const LIMITE = promoLim > 0 ? promoLim : (limitesEmp[normEmp(empreendimento)] ?? 180)
   const teto = prazoN ? Math.min(prazoN + 6, LIMITE) : LIMITE // limite p/ QUALQUER reforço (até 6 meses após o fim)
   const fimContrato = Math.min(prazoN, teto)                  // auto-geração para na última parcela (0 se sem prazo)
   const gFreqMeses = gFreq === 'custom' ? (Number(gFreqN) || 0) : Number(gFreq)
