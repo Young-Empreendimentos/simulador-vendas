@@ -260,9 +260,9 @@ function Toggle({ on, onChange, label, hint }: { on: boolean; onChange: (v: bool
       role="switch"
       aria-checked={on}
       onClick={() => onChange(!on)}
-      className="w-full flex items-center justify-between gap-3 px-3 py-2.5 bg-[#0b111b] border border-white/[0.07] rounded-xl hover:border-white/20 transition-colors"
+      className="w-full flex items-center justify-between gap-3 px-3 py-2.5 bg-[#0b111b] border border-white/[0.07] rounded-xl hover:border-white/20 transition-colors text-left"
     >
-      <span className="text-sm text-gray-200">
+      <span className="min-w-0 text-sm text-gray-200 leading-snug">
         {label}
         {hint && <span className="text-gray-600 text-xs ml-1.5">{hint}</span>}
       </span>
@@ -320,7 +320,7 @@ function CardSimulacao({ r, onGerarContrato }: { r: Resultado; onGerarContrato: 
       <div className="grid grid-cols-2 gap-2.5">
         {!r.avista && (
           <div className="bg-[#131b28] rounded-xl p-3">
-            <p className={lbl}>Entrada</p>
+            <p className={lbl}>Entrada Young</p>
             <CountUp value={r.resumo.entrada} className="block mt-1 text-base font-semibold text-gray-100" />
           </div>
         )}
@@ -677,10 +677,10 @@ export default function Simulador() {
                   </div>
                 </div>
                 <div>
-                  <label className={label}>Entrada</label>
+                  <label className={label}>Entrada Young <span className="text-gray-600 font-normal">(empresa)</span></label>
                   <input className={campo} type="number" value={entrada} onChange={(e) => setEntrada(e.target.value)} placeholder="R$" />
                   <div className="mt-2">
-                    <Toggle on={entradaBaixa} onChange={setEntradaBaixa} label="Entrada Young abaixo do mínimo" hint="(comissão parcelada do corretor)" />
+                    <Toggle on={entradaBaixa} onChange={setEntradaBaixa} label="Entrada Young abaixo do mínimo" />
                   </div>
                   {entradaBaixa && (
                     <p className="text-[11px] text-[#fe5009]/90 bg-[#fe5009]/10 border border-[#fe5009]/25 rounded-lg px-2.5 py-1.5 mt-2 leading-snug">
