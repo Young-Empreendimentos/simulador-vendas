@@ -427,6 +427,9 @@ export default function Simulador() {
   const [precoCustomizado, setPrecoCustomizado] = useState(false)
   const [valorCustom, setValorCustom] = useState('')
   const [bonus, setBonus] = useState('')
+  // Entrada Young abaixo do mínimo de R$ 500 — só para o fluxo de comissão parcelada do corretor.
+  // Normal fica travado em 500; aqui o vendedor libera de propósito e o resto da entrada vira comissão parcelada no contrato.
+  const [entradaBaixa, setEntradaBaixa] = useState(false)
 
   const [carregando, setCarregando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
@@ -555,7 +558,15 @@ export default function Simulador() {
     if (!empreendimento) return setErro('Selecione o empreendimento.')
     if (!numLote.trim()) return setErro('Informe o número do lote.')
     // Entrada mínima R$ 500 (à prazo) — avisa no front antes de ir ao servidor (o servidor também valida).
-    if (tipoVenda === 'aprazo' && (Number(entrada) || 0) < 500) return setErro('Entrada mínima é R$ 500,00.')
+    // Exceção: comissão parcelada do corretor libera entrada abaixo do mínimo (só exige > 0).
+    if (tipoVenda === 'aprazo') {
+      const ent = Number(entrada) || 0
+      if (entradaBaixa) {
+        if (ent <= 0) return setErro('Informe uma entrada maior que zero.')
+      } else if (ent < 500) {
+        return setErro('Entrada mínima é R$ 500,00.')
+      }
+    }
 
     const avista = tipoVenda === 'avista'
     const body: Record<string, unknown> = {
@@ -572,6 +583,7 @@ export default function Simulador() {
     if (!avista) {
       body.prazo_meses = Number(prazo) || 0
       body.reforcos = listaReforcos.map(({ mes, valor, data_str }) => ({ mes, valor, data_str }))
+      if (entradaBaixa) body.permite_entrada_baixa = true
     }
 
     setCarregando(true)
@@ -667,6 +679,14 @@ export default function Simulador() {
                 <div>
                   <label className={label}>Entrada</label>
                   <input className={campo} type="number" value={entrada} onChange={(e) => setEntrada(e.target.value)} placeholder="R$" />
+                  <div className="mt-2">
+                    <Toggle on={entradaBaixa} onChange={setEntradaBaixa} label="Entrada abaixo de R$ 500" hint="(comissão parcelada do corretor)" />
+                  </div>
+                  {entradaBaixa && (
+                    <p className="text-[11px] text-[#fe5009]/90 bg-[#fe5009]/10 border border-[#fe5009]/25 rounded-lg px-2.5 py-1.5 mt-2 leading-snug">
+                      Libera a entrada da Young abaixo do mínimo. O resto da entrada/comissão do corretor você parcela na tela do contrato.
+                    </p>
+                  )}
                 </div>
               </>
             ) : (
