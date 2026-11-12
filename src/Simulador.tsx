@@ -562,7 +562,7 @@ export default function Simulador() {
     if (tipoVenda === 'aprazo') {
       const ent = Number(entrada) || 0
       if (entradaBaixa) {
-        if (ent <= 0) return setErro('Informe uma entrada maior que zero.')
+        if (ent < 0) return setErro('A entrada não pode ser negativa.')
       } else if (ent < 500) {
         return setErro('Entrada mínima é R$ 500,00.')
       }
@@ -680,11 +680,11 @@ export default function Simulador() {
                   <label className={label}>Entrada</label>
                   <input className={campo} type="number" value={entrada} onChange={(e) => setEntrada(e.target.value)} placeholder="R$" />
                   <div className="mt-2">
-                    <Toggle on={entradaBaixa} onChange={setEntradaBaixa} label="Entrada abaixo de R$ 500" hint="(comissão parcelada do corretor)" />
+                    <Toggle on={entradaBaixa} onChange={setEntradaBaixa} label="Entrada Young abaixo do mínimo" hint="(comissão parcelada do corretor)" />
                   </div>
                   {entradaBaixa && (
                     <p className="text-[11px] text-[#fe5009]/90 bg-[#fe5009]/10 border border-[#fe5009]/25 rounded-lg px-2.5 py-1.5 mt-2 leading-snug">
-                      Libera a entrada da Young abaixo do mínimo. O resto da entrada/comissão do corretor você parcela na tela do contrato.
+                      Libera a entrada da Young abaixo de R$ 500 — <span className="font-semibold">pode ser 0</span>, quando a entrada toda vira honorários do corretor (nesse caso o contrato nem cita entrada). O resto da comissão você parcela na tela do contrato.
                     </p>
                   )}
                 </div>

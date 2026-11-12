@@ -954,7 +954,9 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
                     <div className="rounded-lg bg-[#0d0d0d] border border-[#262626] p-3">
                       <p className="text-[11px] text-gray-500">Entrada Young (empresa)</p>
                       <p className="text-white text-base font-medium">{brl(sim.resumo.entrada)}</p>
-                      <p className="text-[10px] text-gray-600 mt-0.5">Desconta do lote — vem da simulação</p>
+                      <p className="text-[10px] text-gray-600 mt-0.5">
+                        {sim.resumo.entrada > 0 ? 'Desconta do lote — vem da simulação' : 'Entrada 0 — o contrato não cita entrada'}
+                      </p>
                     </div>
                     <div className="rounded-lg bg-[#0d0d0d] border border-[#fe5009]/30 p-3">
                       <p className="text-[11px] text-gray-500">Comissão total (corretor)</p>
