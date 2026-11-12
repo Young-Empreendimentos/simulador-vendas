@@ -10,7 +10,7 @@ const j = (body, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 
 function norm(s) {
-  return String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+  return String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 }
 const round2 = (v) => Math.round(Number(v) * 100) / 100;
 const fmt = (v) => Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -284,7 +284,10 @@ Deno.serve(async (req) => {
   }
   const honorarios = round2(comissao_base + bonificacao);
 
-  if (tipo === "aprazo" && !(entrada_bruta > 0)) return j({ erro: "ENTRADA_ZERO", mensagem: "entrada_bruta veio zerada em contrato à prazo." }, 400);
+  // Entrada Young pode ser 0 no modo comissão parcelada (entrada toda virou honorários do corretor).
+  // Fora desse modo, à prazo continua exigindo entrada > 0.
+  if (tipo === "aprazo" && !comissaoParcelada && !(entrada_bruta > 0)) return j({ erro: "ENTRADA_ZERO", mensagem: "entrada_bruta veio zerada em contrato à prazo." }, 400);
+  if (tipo === "aprazo" && entrada_bruta < 0) return j({ erro: "ENTRADA_NEGATIVA", mensagem: "Entrada Young não pode ser negativa." }, 400);
   if (tipo === "aprazo" && !(parcela > 0)) return j({ erro: "PARCELA_ZERO", mensagem: "parcela_mensal veio zerada em contrato à prazo." }, 400);
   const total_parcelas = tipo === "aprazo" ? round2(Number(raw.total_parcelas) || parcela * prazo) : 0;
   const parcela_final = (tipo === "aprazo" && prazo > 1) ? round2(total_parcelas - parcela * (prazo - 1)) : parcela;
@@ -345,7 +348,10 @@ Deno.serve(async (req) => {
       linhas_pgto.push(`4.${pg++} ${vf(preco_total)}, através de transferência bancária, até a data de ${data_entrada} em favor da CREDORA/FIDUCIÁRIA, ${dados_banco_emp}`);
     }
   } else {
-    linhas_pgto.push(`4.${pg++} ENTRADA de ${vf(entrada_liquida)}, através de transferência bancária, até a data de ${data_entrada} em favor da CREDORA/FIDUCIÁRIA, ${dados_banco_emp}`);
+    // Entrada Young = 0 (entrada toda virou honorários do corretor): NÃO escreve cláusula de entrada no contrato.
+    if (entrada_liquida > 0) {
+      linhas_pgto.push(`4.${pg++} ENTRADA de ${vf(entrada_liquida)}, através de transferência bancária, até a data de ${data_entrada} em favor da CREDORA/FIDUCIÁRIA, ${dados_banco_emp}`);
+    }
     if (tem_corretor && honorarios > 0) {
       if (comissaoParcelada) {
         // Comissão paga à parte: entrada do corretor + saldo parcelado/numa data.
