@@ -7,6 +7,7 @@ export type SimParaContrato = {
   num_lote: string
   avista?: boolean
   bonus?: number   // bônus da comissão, herdado da simulação (não se digita de novo no contrato)
+  comissao?: number // comissão TOTAL do corretor (5% + bônus), herdada da simulação — usada no modo comissão parcelada
   resumo: {
     valor_lote_av: number
     entrada: number
@@ -39,6 +40,16 @@ const hojeISO = () => {
 }
 const isoDe = (b: Date) => `${b.getFullYear()}-${String(b.getMonth() + 1).padStart(2, '0')}-${String(b.getDate()).padStart(2, '0')}`
 const hojeMaisDiasISO = (n: number) => { const d = new Date(); d.setDate(d.getDate() + n); return isoDe(d) }
+const round2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100
+// soma n meses a uma data ISO, com clamp pro fim do mês (ex.: 31/jan + 1 = 28/fev).
+const addMesesISO = (iso: string, n: number): string => {
+  if (!iso) return ''
+  const [y, m, d] = iso.split('-').map(Number)
+  const alvo = new Date(y, m - 1 + n, 1)
+  const ultimo = new Date(alvo.getFullYear(), alvo.getMonth() + 1, 0).getDate()
+  alvo.setDate(Math.min(d, ultimo))
+  return isoDe(alvo)
+}
 // 1º vencimento (à prazo): o DIA escolhido, no MÊS SEGUINTE à entrada, com clamp p/ o fim do mês (regra do bot).
 function vencimentoISO(entradaISO: string, dia: number): string {
   if (!entradaISO || !(dia >= 1 && dia <= 31)) return ''
@@ -574,6 +585,15 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
   const [corretorBusca, setCorretorBusca] = useState(() => rasc?.corretorBusca ?? '')
   // Campos do corretor preenchidos na hora quando faltam no cadastro (usado só neste contrato).
   const [corretorOverride, setCorretorOverride] = useState<Record<string, string>>(() => rasc?.corretorOverride ?? {})
+  // ── Comissão parcelada (opção nova) ── Entrada do corretor na assinatura + resto parcelado/numa data.
+  // A "Entrada Young" (empresa) é a entrada da simulação (sim.resumo.entrada); a comissão é à PARTE.
+  const [comissaoParc, setComissaoParc] = useState(false)
+  const [entradaCorretor, setEntradaCorretor] = useState('')          // parte da comissão na assinatura
+  const [comFormaResto, setComFormaResto] = useState<'parcelado' | 'data'>('parcelado')
+  const [comParcelas, setComParcelas] = useState('')                  // nº de parcelas do resto
+  const [comPrimVenc, setComPrimVenc] = useState('')                  // 1ª parcela do resto (ISO)
+  const [comDataUnica, setComDataUnica] = useState('')                // data única do resto (ISO)
+  const [fluxoEmpresa, setFluxoEmpresa] = useState<'paralelo' | 'depois'>('paralelo')
 
   const [carregando, setCarregando] = useState(false)
   const [gerando, setGerando] = useState(false)
@@ -627,6 +647,45 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
     setReservaPreenchida(true)
   }
 
+  // Comissão total (herdada da simulação) + cronograma do parcelamento (modo comissão parcelada).
+  const comissaoTotal = round2(sim.comissao ?? 0)
+  const cronComissao = (() => {
+    if (!(temCorretor && comissaoParc && comissaoTotal > 0)) return null
+    const ent = Math.min(round2(parseFloat(entradaCorretor.replace(',', '.')) || 0), comissaoTotal)
+    const saldo = round2(comissaoTotal - ent)
+    const itens: { iso: string; data_str: string; valor: number }[] = []
+    if (saldo > 0.004) {
+      if (comFormaResto === 'data') {
+        if (comDataUnica) itens.push({ iso: comDataUnica, data_str: brDate(comDataUnica), valor: saldo })
+      } else {
+        const n = Math.max(0, Math.floor(Number(comParcelas) || 0))
+        if (n > 0 && comPrimVenc) {
+          const parc = round2(saldo / n)
+          for (let i = 0; i < n; i++) {
+            const iso = addMesesISO(comPrimVenc, i)
+            itens.push({ iso, data_str: brDate(iso), valor: i === n - 1 ? round2(saldo - parc * (n - 1)) : parc })
+          }
+        }
+      }
+    }
+    const somado = round2(ent + itens.reduce((s, x) => s + x.valor, 0))
+    const fecha = Math.abs(somado - comissaoTotal) < 0.02 && (saldo <= 0.004 || itens.length > 0)
+    const ultimaData = itens.length ? itens[itens.length - 1].iso : (ent > 0 ? dataEntrada : '')
+    return { total: comissaoTotal, entrada: ent, saldo, itens, somado, fecha, ultimaData }
+  })()
+
+  // Fluxo "depois": a 1ª parcela do LOTE começa só após a última da comissão (ajusta só a DATA — não mexe no cálculo).
+  useEffect(() => {
+    if (!comissaoParc) return
+    if (fluxoEmpresa === 'depois' && cronComissao?.ultimaData) {
+      const prox = addMesesISO(cronComissao.ultimaData, 1)
+      if (prox) { setParcelaManual(true); setDataPrimParcela(prox) }
+    } else if (fluxoEmpresa === 'paralelo') {
+      setParcelaManual(false)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [comissaoParc, fluxoEmpresa, cronComissao?.ultimaData])
+
   function montarBody(gerar: boolean, confirmarReserva = false): Record<string, unknown> {
     const body: Record<string, unknown> = {
       tipo_contrato: tipo,
@@ -666,11 +725,20 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
     }
     // Bônus herdado da simulação (não é redigitado aqui). Só entra no contrato com corretor.
     if (temCorretor) body.bonus_comissao = Number(sim.bonus) || 0
+    // Modo comissão parcelada: entrada do corretor na assinatura + cronograma do resto (datas/valores).
+    if (temCorretor && comissaoParc && cronComissao) {
+      body.comissao_corretor_parcelada = true
+      body.entrada_corretor = cronComissao.entrada
+      body.comissao_itens = cronComissao.itens.map((x) => ({ valor: x.valor, data_str: x.data_str }))
+      body.fluxo_empresa = fluxoEmpresa
+    }
     return body
   }
 
   async function chamar(gerar: boolean, confirmarReserva = false) {
-    const { data, error } = await supabase.functions.invoke('gerar-contrato', { body: montarBody(gerar, confirmarReserva) })
+    // No modo comissão parcelada chama a função ISOLADA; fora dele, a de sempre (intocada).
+    const fn = (temCorretor && comissaoParc) ? 'gerar-contrato-corretor' : 'gerar-contrato'
+    const { data, error } = await supabase.functions.invoke(fn, { body: montarBody(gerar, confirmarReserva) })
     if (error) {
       let msg = error.message
       try {
@@ -861,13 +929,104 @@ export default function Contrato({ sim, onClose }: { sim: SimParaContrato; onClo
             Tem corretor / imobiliária externa
           </label>
           {temCorretor && (
-            <div className="flex flex-wrap items-end gap-3">
-              <div className="flex-1 min-w-[220px]">
-                <label className={label}>Corretor — CPF/CNPJ ou nome {req}</label>
-                <input className={campo} value={corretorBusca} onChange={(e) => setCorretorBusca(e.target.value)} placeholder="ex: 026.996.530-04 ou João da Silva" />
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="flex-1 min-w-[220px]">
+                  <label className={label}>Corretor — CPF/CNPJ ou nome {req}</label>
+                  <input className={campo} value={corretorBusca} onChange={(e) => setCorretorBusca(e.target.value)} placeholder="ex: 026.996.530-04 ou João da Silva" />
+                </div>
+                {(sim.bonus ?? 0) > 0 && (
+                  <div className="w-full text-[11px] text-gray-400">Bônus da simulação: <span className="text-gray-200">{brl(sim.bonus ?? 0)}</span> — aplicado nos honorários do corretor.</div>
+                )}
               </div>
-              {(sim.bonus ?? 0) > 0 && (
-                <div className="w-full text-[11px] text-gray-400">Bônus da simulação: <span className="text-gray-200">{brl(sim.bonus ?? 0)}</span> — aplicado nos honorários do corretor.</div>
+
+              {/* ── Comissão parcelada (opção nova, isolada) ── */}
+              {tipo === 'aprazo' && (
+                <label className="flex items-center gap-2 text-sm text-gray-200">
+                  <input type="checkbox" checked={comissaoParc} onChange={(e) => setComissaoParc(e.target.checked)} />
+                  Parcelar a comissão do corretor <span className="text-[11px] text-gray-500">(entrada do corretor + parcelas — libera entrada da empresa abaixo do mínimo)</span>
+                </label>
+              )}
+
+              {comissaoParc && tipo === 'aprazo' && (
+                <div className="rounded-xl border border-[#fe5009]/30 bg-[#fe5009]/5 p-4 space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-lg bg-[#0d0d0d] border border-[#262626] p-3">
+                      <p className="text-[11px] text-gray-500">Entrada Young (empresa)</p>
+                      <p className="text-white text-base font-medium">{brl(sim.resumo.entrada)}</p>
+                      <p className="text-[10px] text-gray-600 mt-0.5">Desconta do lote — vem da simulação</p>
+                    </div>
+                    <div className="rounded-lg bg-[#0d0d0d] border border-[#fe5009]/30 p-3">
+                      <p className="text-[11px] text-gray-500">Comissão total (corretor)</p>
+                      <p className="text-[#fe5009] text-base font-medium">{brl(comissaoTotal)}</p>
+                      <p className="text-[10px] text-gray-600 mt-0.5">À parte — não sai do lote</p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className={label}>Entrada do corretor na assinatura</label>
+                    <input className={campo} type="number" step="0.01" min="0" value={entradaCorretor} onChange={(e) => setEntradaCorretor(e.target.value)} placeholder="0,00" />
+                    <p className="text-[11px] text-gray-500 mt-1">Quanto da comissão o corretor recebe junto com a entrada. Pode ser 0.</p>
+                  </div>
+
+                  {cronComissao && cronComissao.saldo > 0.004 && (
+                    <div className="space-y-3">
+                      <div>
+                        <p className={label}>Resto da comissão ({brl(cronComissao.saldo)})</p>
+                        <div className="inline-flex rounded-lg border border-[#333] overflow-hidden">
+                          {(['parcelado', 'data'] as const).map((f) => (
+                            <button key={f} type="button" onClick={() => setComFormaResto(f)}
+                              className={`text-xs px-3 py-1.5 transition-colors ${comFormaResto === f ? 'bg-[#fe5009] text-white' : 'text-gray-400 hover:text-white'}`}>
+                              {f === 'parcelado' ? 'Parcelar' : 'Numa data'}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      {comFormaResto === 'parcelado' ? (
+                        <div className="grid grid-cols-2 gap-3">
+                          <div><label className={label}>Nº de parcelas</label><input className={campo} type="number" min="1" value={comParcelas} onChange={(e) => setComParcelas(e.target.value)} placeholder="ex: 3" /></div>
+                          <div><label className={label}>1ª parcela</label><input className={campo} type="date" min={hojeISO()} value={comPrimVenc} onChange={(e) => setComPrimVenc(e.target.value)} /></div>
+                        </div>
+                      ) : (
+                        <div><label className={label}>Data do pagamento</label><input className={campo} type="date" min={hojeISO()} value={comDataUnica} onChange={(e) => setComDataUnica(e.target.value)} /></div>
+                      )}
+                    </div>
+                  )}
+
+                  {cronComissao && (
+                    <div className="rounded-lg bg-[#0d0d0d] border border-[#262626] p-3 space-y-1.5">
+                      <p className={label + ' mb-1'}>Cronograma da comissão</p>
+                      {cronComissao.entrada > 0 && (
+                        <div className="flex justify-between text-sm"><span className="text-gray-400">Na assinatura ({dataEntrada ? brDate(dataEntrada) : '—'})</span><span className="text-white">{brl(cronComissao.entrada)}</span></div>
+                      )}
+                      {cronComissao.itens.map((x, i) => (
+                        <div key={i} className="flex justify-between text-sm"><span className="text-gray-400">Parcela {i + 1} — {x.data_str}</span><span className="text-white">{brl(x.valor)}</span></div>
+                      ))}
+                      <div className="flex justify-between text-sm border-t border-[#262626] pt-1.5 mt-1">
+                        <span className="text-gray-400">Total lançado / comissão</span>
+                        <span className={cronComissao.fecha ? 'text-[#26e0a3]' : 'text-yellow-400'}>{brl(cronComissao.somado)} / {brl(cronComissao.total)}</span>
+                      </div>
+                      {!cronComissao.fecha && (
+                        <p className="text-[11px] text-yellow-400">⚠️ Falta fechar o parcelamento com a comissão total (preencha o nº de parcelas + a 1ª data, ou a data única).</p>
+                      )}
+                    </div>
+                  )}
+
+                  <div>
+                    <p className={label}>Parcelas do lote (empresa) começam</p>
+                    <div className="inline-flex rounded-lg border border-[#333] overflow-hidden">
+                      {([['paralelo', 'Em paralelo'], ['depois', 'Depois da comissão']] as const).map(([v, t]) => (
+                        <button key={v} type="button" onClick={() => setFluxoEmpresa(v)}
+                          className={`text-xs px-3 py-1.5 transition-colors ${fluxoEmpresa === v ? 'bg-[#fe5009] text-white' : 'text-gray-400 hover:text-white'}`}>{t}</button>
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-gray-500 mt-1">
+                      {fluxoEmpresa === 'depois'
+                        ? `1ª parcela do lote ajustada pra ${dataPrimParcela ? brDate(dataPrimParcela) : '—'} (após a comissão). Não muda juros nem valor.`
+                        : 'A 1ª parcela do lote segue a data normal, em paralelo à comissão.'}
+                    </p>
+                  </div>
+                </div>
               )}
             </div>
           )}
