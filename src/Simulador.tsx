@@ -680,7 +680,7 @@ export default function Simulador() {
                   <label className={label}>Entrada Young <span className="text-gray-600 font-normal">(empresa)</span></label>
                   <input className={campo} type="number" value={entrada} onChange={(e) => setEntrada(e.target.value)} placeholder="R$" />
                   <div className="mt-2">
-                    <Toggle on={entradaBaixa} onChange={setEntradaBaixa} label="Entrada vai para o corretor" />
+                    <Toggle on={entradaBaixa} onChange={setEntradaBaixa} label="Entrada do corretor abaixo do mínimo" />
                   </div>
                   {entradaBaixa && (
                     <p className="text-[11px] text-[#fe5009]/90 bg-[#fe5009]/10 border border-[#fe5009]/25 rounded-lg px-2.5 py-1.5 mt-2 leading-snug">
