@@ -680,11 +680,11 @@ export default function Simulador() {
                   <label className={label}>Entrada Young <span className="text-gray-600 font-normal">(empresa)</span></label>
                   <input className={campo} type="number" value={entrada} onChange={(e) => setEntrada(e.target.value)} placeholder="R$" />
                   <div className="mt-2">
-                    <Toggle on={entradaBaixa} onChange={setEntradaBaixa} label="Entrada Young abaixo do mínimo" />
+                    <Toggle on={entradaBaixa} onChange={setEntradaBaixa} label="Entrada vai para o corretor" />
                   </div>
                   {entradaBaixa && (
                     <p className="text-[11px] text-[#fe5009]/90 bg-[#fe5009]/10 border border-[#fe5009]/25 rounded-lg px-2.5 py-1.5 mt-2 leading-snug">
-                      Libera a entrada da Young abaixo de R$ 500 — <span className="font-semibold">pode ser 0</span>, quando a entrada toda vira honorários do corretor (nesse caso o contrato nem cita entrada). O resto da comissão você parcela na tela do contrato.
+                      A entrada do cliente vai para o corretor (comissão), não para a Young. A Entrada Young pode ficar abaixo de R$ 500 ou até <span className="font-semibold">0</span> — aí o contrato nem cita entrada. O resto da comissão você parcela na tela do contrato.
                     </p>
                   )}
                 </div>
