@@ -427,10 +427,6 @@ export default function Simulador() {
   const [precoCustomizado, setPrecoCustomizado] = useState(false)
   const [valorCustom, setValorCustom] = useState('')
   const [bonus, setBonus] = useState('')
-  // Entrada Young abaixo do mínimo de R$ 500 — só para o fluxo de comissão parcelada do corretor.
-  // Normal fica travado em 500; aqui o vendedor libera de propósito e o resto da entrada vira comissão parcelada no contrato.
-  const [entradaBaixa, setEntradaBaixa] = useState(false)
-
   const [carregando, setCarregando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [erroPromo, setErroPromo] = useState(false)
@@ -557,15 +553,9 @@ export default function Simulador() {
     if (!confirmarFlag) setConfirmacao(null)
     if (!empreendimento) return setErro('Selecione o empreendimento.')
     if (!numLote.trim()) return setErro('Informe o número do lote.')
-    // Entrada mínima R$ 500 (à prazo) — avisa no front antes de ir ao servidor (o servidor também valida).
-    // Exceção: comissão parcelada do corretor libera entrada abaixo do mínimo (só exige > 0).
+    // Entrada mínima R$ 500 (à prazo) — a Young fica com pelo menos R$ 500 (o servidor também valida).
     if (tipoVenda === 'aprazo') {
-      const ent = Number(entrada) || 0
-      if (entradaBaixa) {
-        if (ent < 0) return setErro('A entrada não pode ser negativa.')
-      } else if (ent < 500) {
-        return setErro('Entrada mínima é R$ 500,00.')
-      }
+      if ((Number(entrada) || 0) < 500) return setErro('Entrada mínima é R$ 500,00.')
     }
 
     const avista = tipoVenda === 'avista'
@@ -583,7 +573,6 @@ export default function Simulador() {
     if (!avista) {
       body.prazo_meses = Number(prazo) || 0
       body.reforcos = listaReforcos.map(({ mes, valor, data_str }) => ({ mes, valor, data_str }))
-      if (entradaBaixa) body.permite_entrada_baixa = true
     }
 
     setCarregando(true)
@@ -678,15 +667,7 @@ export default function Simulador() {
                 </div>
                 <div>
                   <label className={label}>Entrada Young <span className="text-gray-600 font-normal">(empresa)</span></label>
-                  <input className={campo} type="number" value={entrada} onChange={(e) => setEntrada(e.target.value)} placeholder="R$" />
-                  <div className="mt-2">
-                    <Toggle on={entradaBaixa} onChange={setEntradaBaixa} label="Entrada do corretor abaixo do mínimo" />
-                  </div>
-                  {entradaBaixa && (
-                    <p className="text-[11px] text-[#fe5009]/90 bg-[#fe5009]/10 border border-[#fe5009]/25 rounded-lg px-2.5 py-1.5 mt-2 leading-snug">
-                      A entrada do cliente vai para o corretor (comissão), não para a Young. A Entrada Young pode ficar abaixo de R$ 500 ou até <span className="font-semibold">0</span> — aí o contrato nem cita entrada. O resto da comissão você parcela na tela do contrato.
-                    </p>
-                  )}
+                  <input className={campo} type="number" min={500} value={entrada} onChange={(e) => setEntrada(e.target.value)} placeholder="R$ (mín. 500)" />
                 </div>
               </>
             ) : (
