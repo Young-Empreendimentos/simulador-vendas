@@ -465,6 +465,37 @@ export default function Simulador() {
     })
   }, [])
 
+  // Promoções VIGENTES hoje (banner) — só o que está válido agora (não mostra expirada/desativada),
+  // com a validade (data_fim) do banco. Mesma lógica do app externo.
+  const [promosAtivas, setPromosAtivas] = useState<Array<{ emp: string; descricao: string; data_fim: string | null; prazo: number }>>([])
+  useEffect(() => {
+    comercialDb.from('comercial_promocoes').select('empreendimento,prazo_maximo,data_inicio,data_fim,descricao').then(({ data }) => {
+      const hoje = new Date(); hoje.setHours(0, 0, 0, 0)
+      const parse = (s: unknown) => (s ? new Date(String(s) + 'T00:00:00') : null)
+      const list = (data ?? []).filter((r: { data_inicio?: unknown; data_fim?: unknown }) => {
+        const ini = parse(r?.data_inicio), fim = parse(r?.data_fim)
+        if (ini && hoje < ini) return false   // ainda não começou
+        if (fim && hoje > fim) return false    // já terminou
+        return true                            // vigente (sem data_fim = sem término)
+      }).map((r: { empreendimento?: unknown; descricao?: unknown; data_fim?: unknown; prazo_maximo?: unknown }) => ({
+        emp: String(r?.empreendimento ?? ''),
+        descricao: String(r?.descricao ?? ''),
+        data_fim: r?.data_fim ? String(r.data_fim).slice(0, 10) : null,
+        prazo: Number(r?.prazo_maximo) || 0,
+      }))
+      setPromosAtivas(list)
+    })
+  }, [])
+  // Filtra pelos empreendimentos liberados do usuário ("todos" sempre aparece; sem restrição = todos).
+  const promosMostrar = useMemo(() => {
+    const permit = perfil?.empreendimentos ?? []
+    const restringe = permit.length > 0
+    const permSet = new Set(permit.map(normEmp))
+    return promosAtivas
+      .filter((p) => normEmp(p.emp) === 'todos' || !restringe || permSet.has(normEmp(p.emp)))
+      .sort((a, b) => a.emp.localeCompare(b.emp, 'pt-BR') || b.prazo - a.prazo)
+  }, [promosAtivas, perfil])
+
   // Autonomia (preço customizado) liberada em TODOS os empreendimentos p/ quem tem pode_autonomia.
   // Regra no servidor: aumentar sempre pode; desconto só onde há preço mínimo (ex.: Montecarlo).
   const podeAutonomia = !!perfil?.pode_autonomia
@@ -628,6 +659,24 @@ export default function Simulador() {
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fe5009" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="4" y="2" width="16" height="20" rx="2" /><line x1="8" y1="7" x2="16" y2="7" /><line x1="8" y1="11" x2="16" y2="11" /><line x1="8" y1="15" x2="13" y2="15" /></svg>
               <h2 className="font-display text-white text-sm">Nova simulação</h2>
             </div>
+
+            {/* Promoções vigentes (só o que está válido hoje; validade do banco) */}
+            {promosMostrar.length > 0 && (
+              <div className="rounded-xl border border-[#00bcbc]/40 bg-[#00bcbc]/[0.08] p-3">
+                <div className="flex items-center gap-1.5 font-display font-bold text-xs text-[#00bcbc] mb-1.5">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></svg>
+                  Promoções ativas
+                </div>
+                <ul className="space-y-1.5">
+                  {promosMostrar.map((p, i) => (
+                    <li key={i} className="text-[11px] leading-snug text-gray-200">
+                      <span className="font-semibold text-white">{p.emp}</span> — {p.descricao}
+                      {p.data_fim && <span className="text-[#00bcbc] whitespace-nowrap"> · válida até {p.data_fim.split('-').reverse().join('/')}</span>}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             {/* Tipo de venda: à prazo (financiamento) ou à vista (pagamento único) */}
             <div className="flex gap-1 bg-[#0b111b] border border-white/[0.07] rounded-lg p-0.5">
